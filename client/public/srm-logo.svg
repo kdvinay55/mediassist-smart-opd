@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="goldRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D4A843"/>
+      <stop offset="50%" style="stop-color:#C5972F"/>
+      <stop offset="100%" style="stop-color:#D4A843"/>
+    </linearGradient>
+    <linearGradient id="blueCenter" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1A4B8C"/>
+      <stop offset="100%" style="stop-color:#0D3A7A"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer gold ring -->
+  <circle cx="256" cy="256" r="250" fill="url(#goldRing)"/>
+  <!-- Gold dots around ring -->
+  <g fill="#E8C65A">
+    <circle cx="256" cy="18" r="5"/>
+    <circle cx="293" cy="20" r="5"/>
+    <circle cx="329" cy="27" r="5"/>
+    <circle cx="363" cy="39" r="5"/>
+    <circle cx="394" cy="56" r="5"/>
+    <circle cx="422" cy="77" r="5"/>
+    <circle cx="445" cy="102" r="5"/>
+    <circle cx="463" cy="130" r="5"/>
+    <circle cx="477" cy="161" r="5"/>
+    <circle cx="485" cy="194" r="5"/>
+    <circle cx="489" cy="225" r="5"/>
+    <circle cx="494" cy="256" r="5"/>
+    <circle cx="489" cy="287" r="5"/>
+    <circle cx="485" cy="318" r="5"/>
+    <circle cx="477" cy="351" r="5"/>
+    <circle cx="463" cy="382" r="5"/>
+    <circle cx="445" cy="410" r="5"/>
+    <circle cx="422" cy="435" r="5"/>
+    <circle cx="394" cy="456" r="5"/>
+    <circle cx="363" cy="473" r="5"/>
+    <circle cx="329" cy="485" r="5"/>
+    <circle cx="293" cy="492" r="5"/>
+    <circle cx="256" cy="494" r="5"/>
+    <circle cx="219" cy="492" r="5"/>
+    <circle cx="183" cy="485" r="5"/>
+    <circle cx="149" cy="473" r="5"/>
+    <circle cx="118" cy="456" r="5"/>
+    <circle cx="90" cy="435" r="5"/>
+    <circle cx="67" cy="410" r="5"/>
+    <circle cx="49" cy="382" r="5"/>
+    <circle cx="35" cy="351" r="5"/>
+    <circle cx="27" cy="318" r="5"/>
+    <circle cx="23" cy="287" r="5"/>
+    <circle cx="18" cy="256" r="5"/>
+    <circle cx="23" cy="225" r="5"/>
+    <circle cx="27" cy="194" r="5"/>
+    <circle cx="35" cy="161" r="5"/>
+    <circle cx="49" cy="130" r="5"/>
+    <circle cx="67" cy="102" r="5"/>
+    <circle cx="90" cy="77" r="5"/>
+    <circle cx="118" cy="56" r="5"/>
+    <circle cx="149" cy="39" r="5"/>
+    <circle cx="183" cy="27" r="5"/>
+    <circle cx="219" cy="20" r="5"/>
+  </g>
+  <!-- White ring -->
+  <circle cx="256" cy="256" r="220" fill="#F0F0F0"/>
+  <!-- Blue center -->
+  <circle cx="256" cy="256" r="190" fill="url(#blueCenter)"/>
+  <!-- Simplified tree silhouette -->
+  <g fill="white" transform="translate(256, 240)">
+    <!-- Tree trunk -->
+    <rect x="-8" y="30" width="16" height="60" rx="3"/>
+    <!-- Roots -->
+    <path d="M-8,85 Q-30,95 -45,90 M8,85 Q30,95 45,90 M-4,88 Q-15,100 -25,98 M4,88 Q15,100 25,98" stroke="white" stroke-width="4" fill="none"/>
+    <!-- Crown layers -->
+    <ellipse cx="0" cy="-20" rx="100" ry="70" opacity="0.9"/>
+    <ellipse cx="-40" cy="0" rx="55" ry="50" opacity="0.85"/>
+    <ellipse cx="40" cy="0" rx="55" ry="50" opacity="0.85"/>
+    <ellipse cx="0" cy="-50" rx="70" ry="45" opacity="0.9"/>
+    <ellipse cx="-25" cy="-35" rx="50" ry="40" opacity="0.85"/>
+    <ellipse cx="25" cy="-35" rx="50" ry="40" opacity="0.85"/>
+    <ellipse cx="0" cy="-75" rx="45" ry="32" opacity="0.9"/>
+    <ellipse cx="-15" cy="-65" rx="35" ry="28"/>
+    <ellipse cx="15" cy="-65" rx="35" ry="28"/>
+    <ellipse cx="0" cy="-90" rx="25" ry="20"/>
+  </g>
+  <!-- Text: SRM INSTITUTE OF SCIENCE AND TECHNOLOGY (curved on top) -->
+  <defs>
+    <path id="topArc" d="M 70,256 A 186,186 0 0 1 442,256" fill="none"/>
+    <path id="bottomBanner" d="M 140,390 Q 256,420 372,390" fill="none"/>
+  </defs>
+  <text font-family="Georgia, serif" font-size="22" font-weight="bold" fill="white" letter-spacing="3">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">SRM INSTITUTE OF SCIENCE AND TECHNOLOGY</textPath>
+  </text>
+  <!-- Banner at bottom -->
+  <g transform="translate(256, 385)">
+    <path d="M-85,0 Q-90,-15 -70,-15 L70,-15 Q90,-15 85,0 L75,10 Q70,15 60,10 L-60,10 Q-70,15 -75,10 Z" fill="white" stroke="#1A4B8C" stroke-width="1"/>
+    <text font-family="Georgia, serif" font-size="14" font-weight="bold" fill="#1A4B8C" text-anchor="middle" y="2" letter-spacing="2">LEARN · LEAP · LEAD</text>
+  </g>
+</svg>

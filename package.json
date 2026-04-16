@@ -1,0 +1,18 @@
+{
+  "name": "srm-biovault",
+  "version": "1.0.0",
+  "description": "SRM BioVault — Smart Hospital OPD Management System",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "cd client && npm run build",
+    "start": "cd server && node index.js",
+    "deploy:build": "cd client && npm ci && npm run build && cd ../server && npm ci",
+    "app:android": "cd client && npm run cap:run:android",
+    "app:ios": "cd client && npx cap open ios"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

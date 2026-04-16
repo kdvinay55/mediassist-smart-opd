@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Vitals Kiosk - Normal Patient</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { 
+    background: #0a1628; 
+    color: #fff; 
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .kiosk {
+    background: linear-gradient(145deg, #0f1f3d, #0a1628);
+    border: 2px solid #1a3a5c;
+    border-radius: 16px;
+    width: 480px;
+    padding: 32px;
+    box-shadow: 0 0 40px rgba(0,120,255,0.15);
+  }
+  .header {
+    text-align: center;
+    border-bottom: 1px solid #1a3a5c;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+  }
+  .header h1 { font-size: 20px; color: #4fc3f7; letter-spacing: 2px; }
+  .header .sub { font-size: 11px; color: #5a7a9a; margin-top: 4px; }
+  .vital {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .vital:last-of-type { border-bottom: none; }
+  .vital .label { font-size: 13px; color: #6a8aaa; text-transform: uppercase; letter-spacing: 1px; }
+  .vital .val { font-size: 24px; font-weight: 700; }
+  .vital .unit { font-size: 12px; color: #5a7a9a; margin-left: 4px; }
+  .bp .val { color: #4fc3f7; }
+  .hr .val { color: #4caf50; }
+  .temp .val { color: #ffb74d; }
+  .spo2 .val { color: #81c784; }
+  .rr .val { color: #ba68c8; }
+  .wt .val { color: #90a4ae; }
+  .ht .val { color: #78909c; }
+  .bs .val { color: #ff8a65; }
+  .status { 
+    text-align: center; 
+    margin-top: 16px; 
+    padding: 10px; 
+    background: rgba(76,175,80,0.1); 
+    border: 1px solid rgba(76,175,80,0.3); 
+    border-radius: 8px;
+    color: #81c784;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .footer { text-align: center; margin-top: 12px; font-size: 10px; color: #3a5a7a; }
+</style>
+</head>
+<body>
+<div class="kiosk">
+  <div class="header">
+    <h1>SMART VITALS KIOSK</h1>
+    <div class="sub">Patient Vitals Monitor</div>
+  </div>
+  <div class="vital bp">
+    <span class="label">Blood Pressure</span>
+    <span><span class="val">120/80</span><span class="unit">mmHg</span></span>
+  </div>
+  <div class="vital hr">
+    <span class="label">Heart Rate</span>
+    <span><span class="val">72</span><span class="unit">bpm</span></span>
+  </div>
+  <div class="vital temp">
+    <span class="label">Temperature</span>
+    <span><span class="val">98.6</span><span class="unit">°F</span></span>
+  </div>
+  <div class="vital spo2">
+    <span class="label">SpO2</span>
+    <span><span class="val">98</span><span class="unit">%</span></span>
+  </div>
+  <div class="vital rr">
+    <span class="label">Respiratory Rate</span>
+    <span><span class="val">16</span><span class="unit">/min</span></span>
+  </div>
+  <div class="vital wt">
+    <span class="label">Weight</span>
+    <span><span class="val">68</span><span class="unit">kg</span></span>
+  </div>
+  <div class="vital ht">
+    <span class="label">Height</span>
+    <span><span class="val">170</span><span class="unit">cm</span></span>
+  </div>
+  <div class="vital bs">
+    <span class="label">Blood Sugar</span>
+    <span><span class="val">95</span><span class="unit">mg/dL</span></span>
+  </div>
+  <div class="status">ALL VITALS NORMAL</div>
+  <div class="footer">SRM BioVault Kiosk v2.1</div>
+</div>
+</body>
+</html>

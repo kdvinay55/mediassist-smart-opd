@@ -1,0 +1,184 @@
+const express = require('express');
+const LabResult = require('../models/LabResult');
+const { auth, authorize } = require('../middleware/auth');
+const { interpretLabResults } = require('../services/ai');
+const { createNotification } = require('../services/simulationEngine');
+
+const router = express.Router();
+
+// POST /api/lab/order
+router.post('/order', auth, authorize('doctor'), async (req, res) => {
+  try {
+    const { patientId, appointmentId, consultationId, testName, testCategory, priority } = req.body;
+
+    const lab = await LabResult.create({
+      patientId,
+      appointmentId,
+      consultationId,
+      orderedBy: req.user._id,
+      testName,
+      testCategory: testCategory || 'blood',
+      priority: priority || 'normal'
+    });
+
+    // Notify patient about lab order
+    await createNotification(patientId, 'lab-ordered',
+      'Lab Test Ordered',
+      `Dr. ${req.user.name} has ordered a ${testName} test for you. Please proceed to the laboratory.`,
+      lab._id, 'LabResult');
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('lab').emit('new-order', { lab });
+      io.to(`patient-${patientId}`).emit('lab-ordered', { lab });
+    }
+
+    res.status(201).json(lab);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create lab order' });
+  }
+});
+
+// PUT /api/lab/:id/results
+router.put('/:id/results', auth, authorize('doctor', 'admin'), async (req, res) => {
+  try {
+    const { results } = req.body;
+
+    const lab = await LabResult.findByIdAndUpdate(
+      req.params.id,
+      { results, status: 'completed', completedAt: new Date() },
+      { returnDocument: 'after' }
+    );
+
+    if (!lab) {
+      return res.status(404).json({ error: 'Lab order not found' });
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`patient-${lab.patientId}`).emit('lab-results-ready', { lab });
+    }
+
+    // Notify patient that results are ready
+    await createNotification(lab.patientId, 'lab-ready',
+      'Lab Results Ready',
+      `Your ${lab.testName} results are now available. Please check your lab results.`,
+      lab._id, 'LabResult');
+
+    res.json(lab);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update lab results' });
+  }
+});
+
+// POST /api/lab/:id/ai-interpret
+router.post('/:id/ai-interpret', auth, authorize('doctor', 'admin'), async (req, res) => {
+  try {
+    const lab = await LabResult.findById(req.params.id);
+    if (!lab || !lab.results || lab.results.length === 0) {
+      return res.status(400).json({ error: 'No results to interpret' });
+    }
+
+    const interpretation = await interpretLabResults(lab.results);
+    lab.aiInterpretation = interpretation;
+    await lab.save();
+
+    res.json({ interpretation });
+  } catch (error) {
+    res.status(500).json({ error: 'AI interpretation failed' });
+  }
+});
+
+// PUT /api/lab/:id/status
+router.put('/:id/status', auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const updates = { status };
+    if (status === 'sample-collected') updates.sampleCollectedAt = new Date();
+    if (status === 'completed') updates.completedAt = new Date();
+
+    const lab = await LabResult.findByIdAndUpdate(req.params.id, updates, { returnDocument: 'after' });
+    res.json(lab);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// PUT /api/lab/:id/consent — patient accepts or declines lab order
+router.put('/:id/consent', auth, authorize('patient'), async (req, res) => {
+  try {
+    const { consent } = req.body; // 'accepted' or 'declined'
+    if (!['accepted', 'declined'].includes(consent)) {
+      return res.status(400).json({ error: 'Consent must be accepted or declined' });
+    }
+
+    const lab = await LabResult.findById(req.params.id);
+    if (!lab) return res.status(404).json({ error: 'Lab order not found' });
+
+    // Verify this lab belongs to the patient
+    if (lab.patientId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    lab.patientConsent = consent;
+    if (consent === 'declined') {
+      lab.status = 'cancelled';
+    }
+    await lab.save();
+
+    // Notify doctor about patient's decision
+    await createNotification(lab.orderedBy, consent === 'accepted' ? 'lab-ordered' : 'system',
+      consent === 'accepted' ? 'Lab Test Accepted' : 'Lab Test Declined',
+      `Patient has ${consent} the ${lab.testName} test order.`,
+      lab._id, 'LabResult');
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('lab').emit('consent-updated', { lab });
+      io.to(`doctor-${lab.orderedBy}`).emit('lab-consent', { lab, consent });
+    }
+
+    res.json(lab);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update consent' });
+  }
+});
+
+// GET /api/lab (list labs for user)
+router.get('/', auth, async (req, res) => {
+  try {
+    const filter = {};
+    if (req.user.role === 'patient') {
+      filter.patientId = req.user._id;
+    }
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.patientId && req.user.role !== 'patient') filter.patientId = req.query.patientId;
+    if (req.query.consultationId) filter.consultationId = req.query.consultationId;
+
+    const labs = await LabResult.find(filter)
+      .populate('patientId', 'name')
+      .populate('orderedBy', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json(labs);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get lab results' });
+  }
+});
+
+// GET /api/lab/:id
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const lab = await LabResult.findById(req.params.id)
+      .populate('patientId', 'name')
+      .populate('orderedBy', 'name');
+    if (!lab) {
+      return res.status(404).json({ error: 'Lab result not found' });
+    }
+    res.json(lab);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get lab result' });
+  }
+});
+
+module.exports = router;
