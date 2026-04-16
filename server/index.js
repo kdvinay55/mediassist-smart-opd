@@ -73,7 +73,11 @@ app.get('/api/health', (req, res) => {
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '..', 'client', 'dist');
   app.use(express.static(clientDist));
-  app.get('{*path}', (req, res) => {
+  app.get('{*path}', (req, res, next) => {
+    // Don't serve index.html for API or socket.io routes
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }
