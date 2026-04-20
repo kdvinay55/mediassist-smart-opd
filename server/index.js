@@ -187,9 +187,6 @@ async function startServer() {
     } else {
       console.error('Assistant startup health verification failed. Live assistant routes will stay disabled until health is restored.');
       startupResult.issues.forEach((issue) => console.error(`- ${issue}`));
-      if (assistantRuntimeStatus.isDemoMode()) {
-        console.log('Demo mode is enabled. Client-side demo fallback remains available for expo use.');
-      }
     }
   } catch (error) {
     assistantRuntimeStatus.disableAssistant(error.message, {
