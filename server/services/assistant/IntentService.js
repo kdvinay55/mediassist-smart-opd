@@ -222,40 +222,87 @@ class IntentService {
   async detectIntent(text) {
     const input = String(text || '').trim();
     this.logger?.('intent_detect_requested', { model: this.model, chars: input.length });
-    const ruleResult = ruleBasedIntent(input);
 
-    if (ruleResult.intent !== 'GENERAL_CHAT' || !this.openai) {
-      return ruleResult;
-    }
-
-    try {
-      const validIntents = Object.keys(this.handlers).join(', ');
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        temperature: 0,
-        max_completion_tokens: 60,
-        messages: [
-          {
-            role: 'system',
-            content: `You are an intent classifier for a hospital assistant. Classify the user message into exactly one intent. Valid intents: ${validIntents}. Reply with a JSON object: {"intent":"INTENT_NAME","confidence":0.0-1.0}. If unsure, use GENERAL_CHAT.`
-          },
-          { role: 'user', content: input }
-        ]
-      });
-
-      const raw = response?.choices?.[0]?.message?.content?.trim() || '';
-      const match = raw.match(/\{[^}]+\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.intent && this.handlers[parsed.intent] && parsed.confidence >= 0.75) {
-          return { intent: parsed.intent, entities: extractBookingEntities(input), confidence: parsed.confidence };
+    // LLM-first: use OpenAI to classify intent and extract entities naturally
+    if (this.openai) {
+      try {
+        const result = await this.aiDetectIntent(input);
+        if (result && result.intent !== 'GENERAL_CHAT' && result.confidence >= 0.7) {
+          return result;
         }
+        // If AI says GENERAL_CHAT, still return it (skip rule-based for chat)
+        if (result && result.intent === 'GENERAL_CHAT') {
+          return result;
+        }
+      } catch (err) {
+        this.logger?.('ai_intent_error_falling_back', { error: err.message });
       }
-    } catch (err) {
-      this.logger?.('ai_intent_fallback_error', { error: err.message });
     }
 
-    return ruleResult;
+    // Fallback: rule-based when OpenAI is unavailable
+    return ruleBasedIntent(input);
+  }
+
+  async aiDetectIntent(text) {
+    const validIntents = Object.keys(this.handlers);
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      temperature: 0,
+      max_completion_tokens: 300,
+      messages: [
+        {
+          role: 'system',
+          content: `You are an intent classifier and entity extractor for a hospital voice assistant called MediAssist.
+The user speaks in any language (English, Hindi, Telugu, Tamil, Kannada, Malayalam) — you must understand all.
+Classify the user message into exactly ONE intent and extract relevant entities.
+
+Valid intents: ${validIntents.join(', ')}
+
+Entity extraction rules:
+- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (HH:MM AM/PM)
+- CANCEL_APPOINTMENT: extract "cancelAll" (true if user wants ALL appointments cancelled), "appointmentId" (if specific)
+- SHOW_APPOINTMENTS, SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
+- ENTER_VITALS: extract "temperature", "bloodPressure" (as "systolic/diastolic"), "heartRate", "oxygenSaturation"
+- EDIT_PATIENT: extract "field" (one of: name, phone, email, address, bloodGroup, allergies, emergencyContact, dateOfBirth, gender, chronicConditions), "newValue"
+- SET_REMINDER: extract "medication", "time"
+- NAVIGATE: extract "page" (one of: dashboard, appointments, lab results, medications, queue, profile, feedback, symptom checker, opd traffic, notifications, health tracking), "path" (the URL path)
+- GENERAL_CHAT: for greetings, general questions, medical advice questions, or anything that doesn't fit other intents
+
+For dates: "tomorrow" = tomorrow's date, "today" = today's date, specific dates as ISO strings. Today is ${new Date().toISOString().split('T')[0]}.
+For departments: map common terms (e.g., "heart" → "Cardiology", "skin" → "Dermatology", "bone" → "Orthopedics", "ENT" → "ENT", "eye" → "Ophthalmology", "dental" → "Dental", "neuro" → "Neurology", "children" → "Pediatrics", "gynec" → "Gynecology", generic/unspecified → "General Medicine")
+
+Reply with ONLY a JSON object: {"intent":"INTENT_NAME","entities":{...},"confidence":0.0-1.0}
+Do not include any other text.`
+        },
+        { role: 'user', content: text }
+      ]
+    });
+
+    const raw = response?.choices?.[0]?.message?.content?.trim() || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.intent && this.handlers[parsed.intent]) {
+        // Merge AI-extracted entities with rule-based extraction for booking (dates, departments)
+        let entities = parsed.entities || {};
+        if (parsed.intent === 'BOOK_APPOINTMENT') {
+          const ruleEntities = extractBookingEntities(text);
+          entities = { ...ruleEntities, ...entities };
+          if (!entities.date) {
+            entities.date = new Date(Date.now() + 86400000).toISOString();
+          }
+          if (!entities.department) {
+            entities.department = 'General Medicine';
+          }
+        }
+        return {
+          intent: parsed.intent,
+          entities,
+          confidence: parsed.confidence || 0.85
+        };
+      }
+    }
+    return null;
   }
 
   async execute(intent, entities = {}, context = {}) {
@@ -300,6 +347,21 @@ class IntentService {
     const appointments = await Appointment.find({ patientId: userId, status: { $in: ['scheduled', 'in-queue'] } }).sort({ date: 1 });
     if (appointments.length === 0) {
       return { success: false, message: 'You have no active appointments to cancel.' };
+    }
+
+    // Cancel ALL if user asked for "all" or "cancel all"
+    if (entities.cancelAll === true || entities.cancelAll === 'true') {
+      const count = appointments.length;
+      await Appointment.updateMany(
+        { patientId: userId, status: { $in: ['scheduled', 'in-queue'] } },
+        { $set: { status: 'cancelled' } }
+      );
+      return {
+        success: true,
+        message: `All ${count} appointment${count > 1 ? 's have' : ' has'} been cancelled.`,
+        action: 'NAVIGATE',
+        navigateTo: '/appointments'
+      };
     }
 
     const target = entities.appointmentId

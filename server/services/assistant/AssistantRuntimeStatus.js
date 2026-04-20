@@ -1,7 +1,7 @@
 const runtimeState = {
   enabled: true,
-  demoMode: process.env.DEMO_MODE === 'true',
-  mode: process.env.DEMO_MODE === 'true' ? 'demo' : 'active',
+  demoMode: false,
+  mode: 'active',
   reasons: [],
   startup: {
     checked: false,

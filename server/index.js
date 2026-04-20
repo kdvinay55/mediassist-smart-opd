@@ -165,7 +165,7 @@ function listenOnPort(server, port) {
 async function startServer() {
   let databaseError = null;
 
-  assistantRuntimeStatus.setDemoMode(process.env.DEMO_MODE === 'true');
+  // DEMO_MODE only seeds data; assistant always runs in live/active mode
 
   try {
     await connectDB();
