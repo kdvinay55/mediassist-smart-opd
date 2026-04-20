@@ -36,6 +36,11 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map(u => u.trim())
   .filter(Boolean);
 
+// Always allow Capacitor mobile origins
+['capacitor://localhost', 'https://localhost', 'http://localhost'].forEach(o => {
+  if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
+});
+
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,

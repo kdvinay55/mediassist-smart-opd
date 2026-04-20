@@ -18,7 +18,8 @@ export function getStoredAuthToken() {
 
 const api = axios.create({
   baseURL: BASE_URL,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 60000 // 60s — Render free tier cold starts take 30-50s
 });
 
 // Attach token to every request
@@ -30,7 +31,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 responses
+// Handle 401 and network errors
 api.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -38,6 +39,12 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
+    }
+    // Provide clear message for network/timeout errors
+    if (!error.response) {
+      error.message = error.code === 'ECONNABORTED'
+        ? 'Server is starting up, please try again in a moment'
+        : 'Cannot reach server. Check your internet connection.';
     }
     return Promise.reject(error);
   }

@@ -20,7 +20,7 @@ export default function Signup() {
       const result = await signup(form);
       navigate('/verify', { state: { userId: result.userId, displayOtp: result.displayOtp, displayOtpReason: result.displayOtpReason, displayOtp: result.displayOtp, displayOtpReason: result.displayOtpReason } });
     } catch (err) {
-      setError(err.response?.data?.error || 'Signup failed');
+      setError(err.response?.data?.error || err.message || 'Signup failed');
     } finally {
       setLoading(false);
     }

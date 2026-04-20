@@ -26,7 +26,7 @@ export default function Login() {
       if (data?.requiresVerification) {
         navigate('/verify', { state: { userId: data.userId, displayOtp: data.displayOtp, displayOtpReason: data.displayOtpReason, displayOtp: data.displayOtp, displayOtpReason: data.displayOtpReason } });
       } else {
-        setError(data?.error || 'Login failed');
+        setError(data?.error || err.message || 'Login failed');
       }
     } finally {
       setLoading(false);

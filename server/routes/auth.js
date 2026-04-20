@@ -169,7 +169,7 @@ router.post('/verify-otp', async (req, res) => {
       await Patient.findOneAndUpdate(
         { userId: user._id },
         { userId: user._id },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     }
 
