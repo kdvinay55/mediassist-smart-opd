@@ -112,7 +112,7 @@ export default class VoiceOutputService {
                   text,
                   voice: options.voice || DEFAULT_TTS_VOICE,
                   format: 'mp3',
-                  speed: options.speed || 1.0,
+                  speed: options.speed || 1.15,
                   language: options.language || 'en'
                 },
                 {

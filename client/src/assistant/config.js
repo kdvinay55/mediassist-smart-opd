@@ -29,11 +29,11 @@ export const ASSISTANT_RECOVERY_LIMITS = Object.freeze({
   tts: 1
 });
 export const ASSISTANT_LATENCY_THRESHOLDS = Object.freeze({
-  wakeWord: 500,
-  transcription: 1500,
-  intent: 1500,
-  tts: 1000,
-  totalResponse: 3000
+  wakeWord: 800,
+  transcription: 3000,
+  intent: 3000,
+  tts: 4000,
+  totalResponse: 8000
 });
 
 export const SUPPORTED_LANGUAGES = Object.freeze([

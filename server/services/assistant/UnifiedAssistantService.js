@@ -302,10 +302,15 @@ class UnifiedAssistantService {
       ? normalizedInputLanguage
       : await this.gateway.detectLanguage(trimmedText, normalizedSessionLanguage || normalizedInputLanguage);
     const replyLanguage = detectedLanguage || normalizedSessionLanguage || 'en';
+
+    // Send original text to AI intent detection (GPT-5 understands all languages natively)
+    // Only translate to English as fallback for rule-based detection
+    const detection = await this.intentService.detectIntent(trimmedText);
     const englishText = replyLanguage === 'en'
       ? trimmedText
-      : await this.gateway.translateText(trimmedText, 'en');
-    const detection = await this.intentService.detectIntent(englishText);
+      : (detection.intent === 'GENERAL_CHAT' || detection.confidence < ASSISTANT_THRESHOLDS.intentExecution)
+        ? await this.gateway.translateText(trimmedText, 'en')
+        : trimmedText;
     const shouldExecuteIntent = Boolean(
       userId
       && detection.intent !== 'GENERAL_CHAT'

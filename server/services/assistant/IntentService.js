@@ -25,12 +25,12 @@ function extractBookingEntities(text) {
   const entities = {};
   const now = new Date();
 
-  if (lower.includes('tomorrow')) {
-    entities.date = new Date(now.getTime() + 86400000).toISOString();
-  } else if (lower.includes('today')) {
-    entities.date = now.toISOString();
-  } else if (lower.includes('day after tomorrow')) {
+  if (/\bday after tomorrow\b/.test(lower)) {
     entities.date = new Date(now.getTime() + 2 * 86400000).toISOString();
+  } else if (/\btomorrow\b/.test(lower)) {
+    entities.date = new Date(now.getTime() + 86400000).toISOString();
+  } else if (/\b(today|right now|now|immediately|urgent|emergency|abhi|ippudu|ippo)\b/.test(lower)) {
+    entities.date = now.toISOString();
   } else {
     const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
     const dayMatch = lower.match(/(?:on\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:\s+(?:of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december))?/i);
@@ -53,6 +53,7 @@ function extractBookingEntities(text) {
   }
 
   const deptMap = [
+    [/\bemergency\b/, 'Emergency'],
     [/\bent\b/, 'ENT'],
     [/\bcardio(logy)?\b/, 'Cardiology'],
     [/\bortho(pedic)?\b/, 'Orthopedics'],
@@ -119,9 +120,9 @@ function extractPatientEditEntities(lower) {
 function ruleBasedIntent(text) {
   const lower = text.toLowerCase();
   const hasAppointment = /\bappointment\b/.test(lower);
-  const hasBookVerb = /\b(book|schedule|make|fix|set up|need|want|get)\b/.test(lower);
-  const hasDateHint = /\b(tomorrow|today|day after|on\s+\d|next week|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th))\b/.test(lower);
-  const hasDeptHint = /\b(ent|cardio|cardiology|ortho|derma|skin|eye|dental|neuro|pediatric|gynec|general medicine|generic|surgery)\b/.test(lower);
+  const hasBookVerb = /\b(book|schedule|make|fix|set up|need|want|get|chey|cheyi|karo|chahiye|kavali|venum)\b/.test(lower);
+  const hasDateHint = /\b(tomorrow|today|day after|on\s+\d|next week|now|right now|immediately|urgent|abhi|ippudu|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th))\b/.test(lower);
+  const hasDeptHint = /\b(ent|cardio|cardiology|ortho|derma|skin|eye|dental|neuro|pediatric|gynec|general medicine|generic|surgery|emergency)\b/.test(lower);
   const hasSymptomsHint = /\b(body pain|headache|fever|cold|cough|pain|regarding|symptoms?)\b/.test(lower);
 
   if (hasAppointment && (hasBookVerb || hasDateHint || hasDeptHint || hasSymptomsHint)) {
@@ -129,7 +130,8 @@ function ruleBasedIntent(text) {
   }
 
   if (/\b(cancel|remove|delete)\b.*\bappointment\b/.test(lower) || /\bappointment\b.*\b(cancel|remove|delete)\b/.test(lower)) {
-    return { intent: 'CANCEL_APPOINTMENT', entities: {}, confidence: 0.95 };
+    const cancelAll = /\b(all|sab|anni|ellam|ella|ellaam)\b/.test(lower);
+    return { intent: 'CANCEL_APPOINTMENT', entities: { cancelAll }, confidence: 0.95 };
   }
 
   if (/\b(show|list|view|see|get|display|check)\b.*\bappointment/.test(lower) || /\bmy\s+appointment/.test(lower)) {
@@ -259,17 +261,21 @@ Classify the user message into exactly ONE intent and extract relevant entities.
 Valid intents: ${validIntents.join(', ')}
 
 Entity extraction rules:
-- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (HH:MM AM/PM)
-- CANCEL_APPOINTMENT: extract "cancelAll" (true if user wants ALL appointments cancelled), "appointmentId" (if specific)
+- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (HH:MM AM/PM). If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
+- CANCEL_APPOINTMENT: extract "cancelAll" (boolean true if user says "all"/"sab"/"anni"/"ellam" or implies all), "appointmentId" (if cancelling a specific one)
 - SHOW_APPOINTMENTS, SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
 - ENTER_VITALS: extract "temperature", "bloodPressure" (as "systolic/diastolic"), "heartRate", "oxygenSaturation"
 - EDIT_PATIENT: extract "field" (one of: name, phone, email, address, bloodGroup, allergies, emergencyContact, dateOfBirth, gender, chronicConditions), "newValue"
 - SET_REMINDER: extract "medication", "time"
-- NAVIGATE: extract "page" (one of: dashboard, appointments, lab results, medications, queue, profile, feedback, symptom checker, opd traffic, notifications, health tracking), "path" (the URL path)
-- GENERAL_CHAT: for greetings, general questions, medical advice questions, or anything that doesn't fit other intents
+- NAVIGATE: extract "page", "path" (the URL path)
+- GENERAL_CHAT: for greetings, general questions, medical advice, anything that doesn't fit other intents
 
-For dates: "tomorrow" = tomorrow's date, "today" = today's date, specific dates as ISO strings. Today is ${new Date().toISOString().split('T')[0]}.
-For departments: map common terms (e.g., "heart" → "Cardiology", "skin" → "Dermatology", "bone" → "Orthopedics", "ENT" → "ENT", "eye" → "Ophthalmology", "dental" → "Dental", "neuro" → "Neurology", "children" → "Pediatrics", "gynec" → "Gynecology", generic/unspecified → "General Medicine")
+CRITICAL date rules: Today is ${new Date().toISOString().split('T')[0]}. "now"/"right now"/"immediately"/"today itself"/"abhi"/"ippudu" = TODAY's date. "tomorrow"/"kal" = tomorrow. Default when no date mentioned = TODAY.
+Department mapping: "emergency"/"ER" → "Emergency", "heart"/"cardiac" → "Cardiology", "skin" → "Dermatology", "bone"/"joint" → "Orthopedics", "ENT" → "ENT", "eye" → "Ophthalmology", "dental"/"teeth" → "Dental", "neuro"/"brain" → "Neurology", "child"/"pediatric" → "Pediatrics", "gynec"/"women" → "Gynecology", generic/unspecified → "General Medicine", "surgery" → "Surgery"
+
+The user may speak in English, Hindi, Telugu, Tamil, Kannada, Malayalam, or mixed (Tenglish, Hinglish). Understand all.
+"chey"/"cheyi"/"cheyyi" = "do" (Telugu), "book chey" = "book it", "cancel chey" = "cancel it", "lo" = "in" (Telugu)
+"karo" = "do" (Hindi), "dikhao" = "show" (Hindi), "batao" = "tell" (Hindi)
 
 Reply with ONLY a JSON object: {"intent":"INTENT_NAME","entities":{...},"confidence":0.0-1.0}
 Do not include any other text.`
@@ -289,7 +295,7 @@ Do not include any other text.`
           const ruleEntities = extractBookingEntities(text);
           entities = { ...ruleEntities, ...entities };
           if (!entities.date) {
-            entities.date = new Date(Date.now() + 86400000).toISOString();
+            entities.date = new Date().toISOString();
           }
           if (!entities.department) {
             entities.department = 'General Medicine';
@@ -314,8 +320,8 @@ Do not include any other text.`
   }
 
   async bookAppointment(entities, { userId }) {
-    const date = entities.date ? new Date(entities.date) : new Date(Date.now() + 86400000);
-    if (Number.isNaN(date.getTime())) date.setTime(Date.now() + 86400000);
+    const date = entities.date ? new Date(entities.date) : new Date();
+    if (Number.isNaN(date.getTime())) date.setTime(Date.now());
     const department = entities.department || 'General Medicine';
     const timeSlot = await pickAvailableSlot(date, department, entities.timeSlot);
     if (!timeSlot) {
