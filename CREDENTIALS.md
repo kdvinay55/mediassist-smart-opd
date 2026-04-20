@@ -1,8 +1,13 @@
 # Smart OPD — Staff Login Credentials
 
-> **Setup:** Run seed once before first login:
+> **Live URLs**
+> - Frontend: https://srm-mediassist.vercel.app
+> - Backend:  https://mediassist-api.onrender.com
+>
+> **Setup:** Run seed once before first login (idempotent — safe to re-run):
 > ```
-> POST http://localhost:5000/api/demo/seed
+> POST https://mediassist-api.onrender.com/api/demo/seed   # production
+> POST http://localhost:5000/api/demo/seed                 # local dev
 > ```
 
 ---
