@@ -20,6 +20,27 @@ function formatDateForSpeech(dateInput) {
   }).format(date);
 }
 
+function extractDateRangeEntities(lowerText) {
+  const now = new Date();
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const endOfDay = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+  if (/\bday after tomorrow\b/.test(lowerText)) {
+    const target = new Date(now.getTime() + 2 * 86400000);
+    return { dateFrom: startOfDay(target).toISOString(), dateTo: endOfDay(target).toISOString(), dateLabel: 'day after tomorrow' };
+  }
+  if (/\btomorrow\b/.test(lowerText)) {
+    const target = new Date(now.getTime() + 86400000);
+    return { dateFrom: startOfDay(target).toISOString(), dateTo: endOfDay(target).toISOString(), dateLabel: 'tomorrow' };
+  }
+  if (/\btoday\b/.test(lowerText)) {
+    return { dateFrom: startOfDay(now).toISOString(), dateTo: endOfDay(now).toISOString(), dateLabel: 'today' };
+  }
+  if (/\b(this\s+week|upcoming|next\s+few\s+days)\b/.test(lowerText)) {
+    return { dateFrom: startOfDay(now).toISOString(), dateTo: endOfDay(new Date(now.getTime() + 7 * 86400000)).toISOString(), dateLabel: 'this week' };
+  }
+  return {};
+}
+
 function extractBookingEntities(text) {
   const lower = text.toLowerCase();
   const entities = {};
@@ -119,13 +140,19 @@ function extractPatientEditEntities(lower) {
 
 function ruleBasedIntent(text) {
   const lower = text.toLowerCase();
-  const hasAppointment = /\bappointment\b/.test(lower);
+  const hasAppointment = /\bappointment/.test(lower);
   const hasBookVerb = /\b(book|schedule|make|fix|set up|need|want|get|chey|cheyi|karo|chahiye|kavali|venum)\b/.test(lower);
   const hasDateHint = /\b(tomorrow|today|day after|on\s+\d|next week|now|right now|immediately|urgent|abhi|ippudu|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th))\b/.test(lower);
   const hasDeptHint = /\b(ent|cardio|cardiology|ortho|derma|skin|eye|dental|neuro|pediatric|gynec|general medicine|generic|surgery|emergency)\b/.test(lower);
   const hasSymptomsHint = /\b(body pain|headache|fever|cold|cough|pain|regarding|symptoms?)\b/.test(lower);
+  // Question-style appointment lookups must NEVER be classified as booking.
+  const isAppointmentQuery = hasAppointment && /\b(what|which|how\s+many|when|do\s+i\s+have|any|got|remaining|upcoming|scheduled|booked|status|list|show|view|see|check|display|tell\s+me|my)\b/.test(lower);
 
-  if (hasAppointment && (hasBookVerb || hasDateHint || hasDeptHint || hasSymptomsHint)) {
+  if (isAppointmentQuery) {
+    return { intent: 'SHOW_APPOINTMENTS', entities: extractDateRangeEntities(lower), confidence: 0.95 };
+  }
+
+  if (hasAppointment && (hasBookVerb || hasDeptHint || hasSymptomsHint)) {
     return { intent: 'BOOK_APPOINTMENT', entities: extractBookingEntities(text), confidence: 0.95 };
   }
 
@@ -135,7 +162,7 @@ function ruleBasedIntent(text) {
   }
 
   if (/\b(show|list|view|see|get|display|check)\b.*\bappointment/.test(lower) || /\bmy\s+appointment/.test(lower)) {
-    return { intent: 'SHOW_APPOINTMENTS', entities: {}, confidence: 0.95 };
+    return { intent: 'SHOW_APPOINTMENTS', entities: extractDateRangeEntities(lower), confidence: 0.95 };
   }
   if (lower.includes('lab result') || lower.includes('lab results') || lower.includes('test result')) {
     return { intent: 'SHOW_LAB_RESULTS', entities: {}, confidence: 0.95 };
@@ -275,9 +302,10 @@ Classify the user message into exactly ONE intent and extract relevant entities.
 Valid intents: ${validIntents.join(', ')}
 
 Entity extraction rules:
-- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (HH:MM AM/PM). If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
+- BOOK_APPOINTMENT: ONLY for creating a NEW appointment. Do NOT use for "what/which/when/do I have" questions about existing appointments — those are SHOW_APPOINTMENTS. Extract "date" (ISO string), "department", "timeSlot" (HH:MM AM/PM). If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
 - CANCEL_APPOINTMENT: extract "cancelAll" (boolean true if user says "all"/"sab"/"anni"/"ellam" or implies all), "appointmentId" (if cancelling a specific one)
-- SHOW_APPOINTMENTS, SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
+- SHOW_APPOINTMENTS: use this WHENEVER the user is asking ABOUT existing appointments (not booking a new one). Trigger phrases: "what appointments do I have", "do I have any appointment tomorrow", "my appointment status", "when is my next appointment", "kal koi appointment hai", "naa appointment ekkada", "list my visits". Extract optional "dateLabel" = "today" | "tomorrow" | "day after tomorrow" | "this week" when present, else omit.
+- SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
 - ENTER_VITALS: extract "temperature", "bloodPressure" (as "systolic/diastolic"), "heartRate", "oxygenSaturation"
 - EDIT_PATIENT: extract "field" (one of: name, phone, email, address, bloodGroup, allergies, emergencyContact, dateOfBirth, gender, chronicConditions), "newValue"
 - SET_REMINDER: extract "medication", "time"
@@ -313,6 +341,19 @@ Do not include any other text.`
           }
           if (!entities.department) {
             entities.department = 'General Medicine';
+          }
+        }
+        if (parsed.intent === 'SHOW_APPOINTMENTS') {
+          // Convert any LLM-provided date hint into a concrete date range so the
+          // handler can filter directly without re-asking the patient.
+          const lower = (text || '').toLowerCase();
+          const ruleRange = extractDateRangeEntities(lower);
+          if (ruleRange.dateFrom) {
+            entities = { ...entities, ...ruleRange };
+          } else if (typeof entities.dateLabel === 'string') {
+            const labelLower = entities.dateLabel.toLowerCase();
+            const synthesized = extractDateRangeEntities(labelLower);
+            if (synthesized.dateFrom) entities = { ...entities, ...synthesized };
           }
         }
         return {
@@ -423,27 +464,48 @@ Do not include any other text.`
     };
   }
 
-  async showAppointments(_entities, { userId }) {
-    const appointments = await Appointment.find({ patientId: userId }).sort({ date: -1 }).limit(5).lean();
+  async showAppointments(entities, { userId }) {
+    const query = { patientId: userId };
+    const dateLabel = entities?.dateLabel;
+    if (entities?.dateFrom && entities?.dateTo) {
+      query.date = { $gte: new Date(entities.dateFrom), $lte: new Date(entities.dateTo) };
+    }
+    const sortOrder = entities?.dateFrom ? { date: 1 } : { date: -1 };
+    const appointments = await Appointment.find(query)
+      .populate('doctorId', 'name')
+      .sort(sortOrder)
+      .limit(5)
+      .lean();
+
     if (appointments.length === 0) {
-      return { success: true, message: 'You have no appointments scheduled.' };
+      const scope = dateLabel ? ` for ${dateLabel}` : '';
+      return { success: true, message: `You have no appointments scheduled${scope}.` };
     }
 
+    const describe = (a) => {
+      const dept = a.department || 'General';
+      const doctor = a.doctorId?.name ? ` with Dr. ${a.doctorId.name}` : '';
+      const slot = a.timeSlot ? ` at ${a.timeSlot}` : '';
+      const when = formatDateForSpeech(a.date);
+      return `${dept}${doctor} on ${when}${slot} (${a.status})`;
+    };
+
     if (appointments.length === 1) {
-      const appointment = appointments[0];
+      const scope = dateLabel ? ` for ${dateLabel}` : '';
       return {
         success: true,
-        message: `You have one appointment in ${appointment.department || 'General'} on ${formatDateForSpeech(appointment.date)}, and it is ${appointment.status}.`,
+        message: `You have one appointment${scope}: ${describe(appointments[0])}.`,
         action: 'NAVIGATE',
         navigateTo: '/appointments'
       };
     }
 
     const ordinals = ['first', 'second', 'third', 'fourth', 'fifth'];
-    const parts = appointments.map((appointment, index) => `Your ${ordinals[index] || `${index + 1}th`} appointment is ${appointment.department || 'General'} on ${formatDateForSpeech(appointment.date)}, status ${appointment.status}`);
+    const parts = appointments.map((a, index) => `${ordinals[index] || `${index + 1}th`}, ${describe(a)}`);
+    const scope = dateLabel ? ` for ${dateLabel}` : '';
     return {
       success: true,
-      message: `You have ${appointments.length} recent appointments. ${parts.join('. ')}.`,
+      message: `You have ${appointments.length} appointments${scope}. ${parts.join('. ')}.`,
       action: 'NAVIGATE',
       navigateTo: '/appointments'
     };
