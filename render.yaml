@@ -16,7 +16,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: CLIENT_URL
-        value: https://mediassist.vercel.app
+        value: https://srm-mediassist.vercel.app
       - key: EMAIL_HOST
         value: smtp.gmail.com
       - key: EMAIL_PORT
