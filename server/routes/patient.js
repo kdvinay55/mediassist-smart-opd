@@ -36,7 +36,7 @@ router.put('/profile', auth, async (req, res) => {
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { ...patientData, userId: req.user._id },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
 
     // Return updated user info along with patient data
@@ -66,7 +66,7 @@ router.post('/onboarding', auth, async (req, res) => {
         currentMedications: currentMedications?.filter(Boolean) || [],
         medicalHistory: medicalHistory?.filter(h => h.condition) || []
       },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
 
     // Mark onboarding complete on user

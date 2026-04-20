@@ -333,7 +333,7 @@ router.put('/profile', auth, async (req, res) => {
 
     // Update patient profile if provided
     if (updates.patientProfile && req.user.role === 'patient') {
-      await Patient.findOneAndUpdate({ userId: req.user._id }, updates.patientProfile, { new: true, upsert: true });
+      await Patient.findOneAndUpdate({ userId: req.user._id }, updates.patientProfile, { returnDocument: 'after', upsert: true });
     }
 
     res.json({ user });

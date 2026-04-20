@@ -109,15 +109,18 @@ app.get('/api/health/diag', (req, res) => {
 
 // Serve web dashboard in production (built React app)
 if (process.env.NODE_ENV === 'production') {
+  const fs = require('fs');
   const clientDist = path.join(__dirname, '..', 'client', 'dist');
-  app.use(express.static(clientDist));
-  app.get('{*path}', (req, res, next) => {
-    // Don't serve index.html for API or socket.io routes
-    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
-      return next();
-    }
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.get('{*path}', (req, res, next) => {
+      // Don't serve index.html for API or socket.io routes
+      if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+        return next();
+      }
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
+  }
 }
 
 // Socket.IO
