@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "SRM MediAssist",
+    "slug": "srm-mediassist",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "srm-mediassist",
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
+    "splash": {
+      "backgroundColor": "#0f172a"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "21a8e7ad-4546-4257-889b-6eaebb446f0e"
+      }
+    }
+  }
+}
