@@ -280,6 +280,12 @@ class UnifiedAssistantService {
     if (normalizedTargetLanguage === 'en' && /[A-Za-z]/.test(text)) {
       return text;
     }
+    // Code-mix tolerance: if reply already contains *some* native script of the target language
+    // OR is mostly Latin (likely a Romanized regional reply like Tenglish/Hinglish), accept it.
+    const hasAnyNativeScript = /[\u0900-\u0D7F]/.test(text);
+    if (!hasAnyNativeScript && /[A-Za-z]/.test(text)) {
+      return text;
+    }
     return this.gateway.translateText(text, normalizedTargetLanguage);
   }
 

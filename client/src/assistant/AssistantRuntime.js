@@ -145,6 +145,7 @@ function buildInitialSystemStatus(language) {
 class AssistantRuntime {
   constructor() {
     this.conversationHistory = [];
+    this.streamingMessage = null;
     this.recordingTimer = null;
     this.sessionTimeoutId = null;
     this.pendingCommandController = null;
@@ -855,6 +856,7 @@ class AssistantRuntime {
             success: true,
             streaming: true
           });
+          this.beginStreamingAssistantMessage();
           firstReplyEventSeen = true;
         }
 
@@ -863,6 +865,7 @@ class AssistantRuntime {
           continue;
         }
         replyText += delta;
+        this.appendStreamingDelta(delta);
         speechBuffer += delta;
         const { segments, remainder } = extractSpeechSegments(speechBuffer);
         speechBuffer = remainder;
@@ -1177,7 +1180,33 @@ class AssistantRuntime {
   }
 
   pushAssistantMessage(content, extra = {}) {
+    if (this.streamingMessage) {
+      this.streamingMessage.content = content;
+      Object.assign(this.streamingMessage, extra, { streaming: false });
+      this.streamingMessage = null;
+      this.onMessage?.(this.conversationHistory[this.conversationHistory.length - 1], [...this.conversationHistory]);
+      return;
+    }
     this.pushMessage({ role: 'assistant', content, timestamp: Date.now(), ...extra });
+  }
+
+  beginStreamingAssistantMessage() {
+    const message = { role: 'assistant', content: '', timestamp: Date.now(), streaming: true };
+    this.streamingMessage = message;
+    this.conversationHistory.push(message);
+    if (this.conversationHistory.length > MAX_HISTORY) {
+      this.conversationHistory = this.conversationHistory.slice(-MAX_HISTORY);
+      this.streamingMessage = this.conversationHistory[this.conversationHistory.length - 1];
+    }
+    this.onMessage?.(message, [...this.conversationHistory]);
+  }
+
+  appendStreamingDelta(delta) {
+    if (!this.streamingMessage) {
+      this.beginStreamingAssistantMessage();
+    }
+    this.streamingMessage.content += delta;
+    this.onMessage?.(this.streamingMessage, [...this.conversationHistory]);
   }
 
   pushMessage(message) {

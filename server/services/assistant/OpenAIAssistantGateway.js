@@ -62,11 +62,11 @@ function buildTokenParams(model, maxTokens) {
     : { max_tokens: maxTokens };
 }
 
-function buildCompletionConfig(model, temperature, maxTokens) {
+function buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort = 'minimal' } = {}) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))
-      ? { reasoning_effort: 'low' }
+      ? { reasoning_effort: reasoningEffort }
       : { temperature })
   };
 }
@@ -190,20 +190,10 @@ class OpenAIAssistantGateway {
     const prompt = `${history ? `Conversation history:\n${history}\n\n` : ''}User message:\n${message}`;
 
     return this.complete({
-      systemPrompt: `You are MediAssist, a friendly and caring AI assistant at SRM Hospital. Reply entirely in ${languageLabel}.
-
-You help patients with appointments, lab results, medications, queue info, vitals, profile updates, symptom guidance, and hospital navigation.
-
-Rules:
-- Be warm, natural, and conversational — like a helpful friend, not a robot
-- Keep answers short (2-3 sentences max) but genuinely helpful
-- If the user speaks in mixed language (Tenglish, Hinglish), respond in that same style
-- For medical questions, give practical guidance first, then suggest seeing a doctor if needed
-- Never say just "consult a doctor" without providing any useful information first
-- Use simple everyday language, avoid medical jargon unless necessary`,
+      systemPrompt: this.buildAssistantSystemPrompt(languageLabel),
       userPrompt: prompt,
       temperature: 0.3,
-      maxTokens: 220
+      maxTokens: 200
     });
   }
 
@@ -216,20 +206,28 @@ Rules:
     const prompt = `${history ? `Conversation history:\n${history}\n\n` : ''}User message:\n${message}`;
 
     yield* this.streamComplete({
-      systemPrompt: `You are MediAssist, a friendly and caring AI assistant at SRM Hospital. Reply entirely in ${languageLabel}.
-
-You help patients with appointments, lab results, medications, queue info, vitals, profile updates, symptom guidance, and hospital navigation.
-
-Rules:
-- Be warm, natural, and conversational — like a helpful friend, not a robot
-- Keep answers short (2-3 sentences max) but genuinely helpful
-- If the user speaks in mixed language (Tenglish, Hinglish), respond in that same style
-- For medical questions, give practical guidance first, then suggest seeing a doctor if needed
-- Use simple everyday language, avoid medical jargon unless necessary`,
+      systemPrompt: this.buildAssistantSystemPrompt(languageLabel),
       userPrompt: prompt,
       temperature: 0.3,
-      maxTokens: 260
+      maxTokens: 240
     });
+  }
+
+  buildAssistantSystemPrompt(languageLabel) {
+    return `You are MediAssist, a friendly AI assistant at SRM Hospital.
+
+LANGUAGE RULES (very important):
+- Default reply language: ${languageLabel}.
+- MIRROR the user. If they mix English with Telugu/Hindi/Tamil/Kannada/Malayalam (Tenglish, Hinglish, Tanglish, etc.), reply in the SAME mixed style — do NOT switch to pure native script.
+- If user writes Telugu in Roman letters ("naaku appointment kaavali"), reply in Roman Telugu, not Telugu script.
+- If user writes pure Telugu script (తెలుగు), reply in pure Telugu script.
+- Use Telugu words for Telugu requests, Hindi words for Hindi — never substitute Tamil words for Telugu or vice versa.
+
+STYLE:
+- Warm, natural, like a helpful human friend — never robotic.
+- 1-2 short sentences usually. Max 3.
+- Give practical info first; suggest a doctor only when truly needed.
+- Skip greetings if the user already greeted; just answer.`;
   }
 
   async transcribeAudio(audioBuffer, filename = 'assistant-command.webm', options = {}) {
@@ -314,6 +312,9 @@ Rules:
       return null;
     }
 
+    const detectedLanguage = normalizeLanguageCode(language || inferLanguageFromScript(text), 'en');
+    const languageLabel = this.languageMap[detectedLanguage] || 'English';
+
     const params = {
       model: this.ttsModel,
       voice,
@@ -323,7 +324,16 @@ Rules:
     };
 
     if (/gpt-4o.*tts/i.test(this.ttsModel)) {
-      params.instructions = 'You are a warm, friendly hospital assistant named MediAssist. Speak naturally like a helpful human — casual but professional. Match the language of the input text. If text is in Telugu, speak Telugu. If Hindi, speak Hindi. Never sound robotic or monotone. Add natural pauses and emphasis.';
+      const pronunciationGuards = {
+        te: 'The text is in TELUGU. Pronounce every word using authentic Telugu phonetics. NEVER use Tamil, Kannada, or Hindi pronunciation. Telugu has soft "a" endings ("vaccharu" not "vandhaar"); use proper Telugu vowel sounds.',
+        hi: 'The text is in HINDI. Use clean Hindi/Hindustani pronunciation. Do not Sanskritize.',
+        ta: 'The text is in TAMIL. Use authentic Tamil phonetics, not Telugu or Malayalam.',
+        kn: 'The text is in KANNADA. Use authentic Kannada phonetics.',
+        ml: 'The text is in MALAYALAM. Use authentic Malayalam phonetics.',
+        en: 'The text is in English (possibly Indian English). Use clear, neutral pronunciation.'
+      };
+      const guard = pronunciationGuards[detectedLanguage] || pronunciationGuards.en;
+      params.instructions = `You are MediAssist, a warm friendly hospital assistant speaking ${languageLabel}. ${guard} Speak naturally and conversationally — like a helpful human, never robotic or monotone. Use natural pauses and gentle emphasis. If the text mixes English and ${languageLabel}, switch fluently between them keeping each word in its native pronunciation.`;
     }
 
     const response = await this.client.audio.speech.create(params);
@@ -331,7 +341,7 @@ Rules:
     this.logger?.('assistant_tts_complete', {
       model: this.ttsModel,
       voice,
-      language: language || 'auto',
+      language: detectedLanguage,
       chars: text.length
     });
     return Buffer.from(arrayBuffer);
