@@ -36,21 +36,37 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map(u => u.trim())
   .filter(Boolean);
 
-// Always allow Capacitor mobile origins
-['capacitor://localhost', 'https://localhost', 'http://localhost'].forEach(o => {
+// Always allow Capacitor mobile origins + known production frontends
+[
+  'capacitor://localhost',
+  'https://localhost',
+  'http://localhost',
+  'https://srm-mediassist.vercel.app',
+].forEach(o => {
   if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
 });
 
+// Allow any *.vercel.app preview deployment + Capacitor schemes via function form
+const corsOriginFn = (origin, cb) => {
+  if (!origin) return cb(null, true); // same-origin / curl / mobile
+  if (allowedOrigins.includes(origin)) return cb(null, true);
+  try {
+    const host = new URL(origin).hostname;
+    if (host.endsWith('.vercel.app')) return cb(null, true);
+  } catch { /* ignore */ }
+  return cb(new Error(`CORS blocked: ${origin}`));
+};
+
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOriginFn,
     methods: ['GET', 'POST']
   }
 });
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(cors({ origin: corsOriginFn, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
