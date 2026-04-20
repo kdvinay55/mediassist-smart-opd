@@ -305,9 +305,9 @@ export default class SpeechRecognitionService {
         try {
           const formData = new FormData();
           formData.append('audio', audioBlob, 'assistant-command.webm');
-          if (this.confidence_score >= 0.6 && this.last_language) {
-            formData.append('languageHint', this.last_language);
-          }
+          // Intentionally NOT sending languageHint: Whisper auto-detects each turn.
+          // Sending a stale hint causes Tamil audio to be transcribed as Telugu (and vice versa)
+          // when the previous turn was in a different Dravidian language.
           formData.append('confidenceScore', String(this.confidence_score));
           formData.append('translationMode', this.translation_mode || defaultTranslationMode(this.last_language));
           const response = await this.apiClient.post('/transcribe', formData, {

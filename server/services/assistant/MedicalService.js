@@ -13,7 +13,7 @@ function buildCompletionConfig(model, temperature, maxTokens) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))
-      ? { reasoning_effort: 'low' }
+      ? { reasoning_effort: 'medium' }
       : { temperature })
   };
 }
@@ -42,7 +42,7 @@ Guidelines:
 - NEVER just say \"please consult a doctor\" without giving any useful information first`;
   }
 
-  async complete(userPrompt, { language = 'English', maxTokens = 300 } = {}) {
+  async complete(userPrompt, { language = 'English', maxTokens = 450 } = {}) {
     if (!this.client) {
       this.logger?.('medical_response_unavailable', { reason: 'missing_api_key' });
       return FALLBACK_MESSAGE;
@@ -66,7 +66,7 @@ Guidelines:
     }
   }
 
-  async *streamComplete(userPrompt, { language = 'English', maxTokens = 300 } = {}) {
+  async *streamComplete(userPrompt, { language = 'English', maxTokens = 450 } = {}) {
     if (!this.client) {
       yield FALLBACK_MESSAGE;
       return;

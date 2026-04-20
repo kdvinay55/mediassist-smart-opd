@@ -260,7 +260,7 @@ STYLE:
         file,
         temperature: 0,
         response_format: isGpt4oTranscribe ? 'json' : 'verbose_json',
-        prompt: 'MediAssist medical assistant. Commands may be in English, Hindi, Telugu, Tamil, Kannada or Malayalam. Expect hospital terms such as appointment, consultation, lab results, queue and medication.'
+        prompt: 'MediAssist Indian medical assistant. Audio may be in English, Hindi (हिन्दी देवनागरी), Telugu (తెలుగు), Tamil (தமிழ்), Kannada (ಕನ್ನಡ), or Malayalam (മലയാളം). These four South Indian languages use distinct scripts and must NOT be confused with each other. Transcribe in the script natively used by the language actually spoken. Hospital terms: appointment, consultation, lab, queue, medication, fever, cough, headache, diabetes, BP.'
       };
 
       if (languageOverride) {
@@ -272,7 +272,14 @@ STYLE:
 
     const buildResult = (response, detectionMode) => {
       const text = response?.text?.trim() || '';
-      const detectedLanguage = normalizeLanguageCode(response?.language || inferLanguageFromScript(text));
+      // Script detection is ground truth: if the transcribed text contains a
+      // specific Indic script, the output language MUST match that script,
+      // regardless of what Whisper labels response.language as. This prevents
+      // mismatches where Whisper outputs Tamil characters but tags it 'te'.
+      const scriptLanguage = inferLanguageFromScript(text);
+      const detectedLanguage = scriptLanguage && scriptLanguage !== 'en'
+        ? scriptLanguage
+        : normalizeLanguageCode(response?.language || scriptLanguage);
       const confidenceScore = scoreLanguageConfidence({
         text,
         detectedLanguage,
