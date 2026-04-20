@@ -145,20 +145,30 @@ class OpenAIAssistantGateway {
 
   async detectLanguage(text, preferredLanguage) {
     if (!text) return 'en';
-    if (!this.client) return inferLanguageFromScript(text);
+
+    // Script-based detection wins immediately for non-Latin scripts (te, hi, ta, kn, ml).
+    // This makes language switching instant and free — no AI call needed.
+    const scriptLang = inferLanguageFromScript(text);
+    if (scriptLang !== 'en') {
+      return scriptLang;
+    }
+
+    // Pure Latin text: could be English OR Romanized regional (Tenglish/Hinglish).
+    // Use session hint as soft preference; otherwise default to English.
+    if (!this.client) return preferredLanguage ? normalizeLanguageCode(preferredLanguage) : 'en';
 
     try {
       const supported = Object.keys(this.languageMap).join(', ');
       const reply = await this.complete({
-        systemPrompt: 'Detect the dominant language. Reply with one two-letter ISO-639-1 code only. Prefer the actual input text over any previous session language.',
-        userPrompt: `Supported codes: ${supported}.\nPrevious session language: ${normalizeLanguageCode(preferredLanguage, 'unknown')}.\n\nText:\n${text}`,
+        systemPrompt: 'Detect the dominant language of the text. Reply with one two-letter ISO-639-1 code only. For Romanized regional text (e.g. "naaku appointment kavali" = te, "mujhe chahiye" = hi), pick the underlying language. For plain English, reply en.',
+        userPrompt: `Supported codes: ${supported}.\nText:\n${text}`,
         temperature: 0,
         maxTokens: 6
       });
       const code = (reply || '').slice(0, 2).toLowerCase();
-      return this.languageMap[code] ? code : inferLanguageFromScript(text);
+      return this.languageMap[code] ? code : 'en';
     } catch {
-      return inferLanguageFromScript(text);
+      return preferredLanguage ? normalizeLanguageCode(preferredLanguage) : 'en';
     }
   }
 

@@ -193,9 +193,23 @@ async function pickAvailableSlot(date, department, requested) {
     status: { $nin: ['cancelled', 'no-show'] }
   }).select('timeSlot').lean();
 
+  const now = new Date();
+  const isToday = startOfDay.toDateString() === now.toDateString();
+
+  const isFutureSlot = (slot) => {
+    if (!isToday) return true;
+    const [time, period] = slot.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    if (h < now.getHours()) return false;
+    if (h === now.getHours() && m <= now.getMinutes() + 15) return false;
+    return true;
+  };
+
   const taken = new Set(booked.map((entry) => entry.timeSlot));
-  if (requested && !taken.has(requested)) return requested;
-  return BOOKABLE_SLOTS.find((slot) => !taken.has(slot)) || null;
+  if (requested && !taken.has(requested) && isFutureSlot(requested)) return requested;
+  return BOOKABLE_SLOTS.find((slot) => !taken.has(slot) && isFutureSlot(slot)) || null;
 }
 
 class IntentService {
@@ -323,26 +337,47 @@ Do not include any other text.`
     const date = entities.date ? new Date(entities.date) : new Date();
     if (Number.isNaN(date.getTime())) date.setTime(Date.now());
     const department = entities.department || 'General Medicine';
-    const timeSlot = await pickAvailableSlot(date, department, entities.timeSlot);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    let timeSlot = await pickAvailableSlot(date, department, entities.timeSlot);
+    let bookedDate = date;
+
+    // If today is fully booked or it's already late in the day, roll to tomorrow automatically.
+    if (!timeSlot && isToday) {
+      const tomorrow = new Date(now.getTime() + 86400000);
+      timeSlot = await pickAvailableSlot(tomorrow, department, entities.timeSlot);
+      if (timeSlot) {
+        bookedDate = tomorrow;
+      }
+    }
+
     if (!timeSlot) {
-      return { success: false, message: `Sorry, ${department} is fully booked on ${formatDateForSpeech(date)}. Please pick another date or department.` };
+      return { success: false, message: `Sorry, ${department} has no open slots on ${formatDateForSpeech(date)} or tomorrow. Please pick another department.` };
     }
 
     const appointment = await Appointment.create({
       patientId: userId,
-      date,
+      doctorId: null, // auto-assigned at reception verification
+      date: bookedDate,
       department,
       timeSlot,
       type: 'new',
       status: 'scheduled',
-      priority: 'normal',
+      priority: department === 'Emergency' ? 'emergency' : 'normal',
       symptoms: [],
       qrToken: generateQrToken()
     });
 
+    const dateLabel = bookedDate.toDateString() === now.toDateString()
+      ? 'today'
+      : bookedDate.toDateString() === new Date(now.getTime() + 86400000).toDateString()
+        ? 'tomorrow'
+        : formatDateForSpeech(bookedDate);
+
     return {
       success: true,
-      message: `Appointment booked for ${formatDateForSpeech(date)} at ${timeSlot} in ${department} department. Your appointment ID is ${appointment._id.toString().slice(-6).toUpperCase()}.`,
+      message: `Done. Your ${department} appointment is booked for ${dateLabel} at ${timeSlot}. Token ID ${appointment._id.toString().slice(-6).toUpperCase()}. Please show your QR at the reception desk — they will verify you, assign an available doctor, and direct you to the OPD queue.`,
       action: 'NAVIGATE',
       navigateTo: '/appointments',
       data: appointment
