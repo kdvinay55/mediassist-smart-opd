@@ -4,9 +4,10 @@ const Consultation = require('../models/Consultation');
 const Vitals = require('../models/Vitals');
 const Medication = require('../models/Medication');
 const { auth } = require('../middleware/auth');
-const { generateWellnessPlan } = require('../services/ai');
+const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
 
 const router = express.Router();
+const assistantService = new UnifiedAssistantService();
 
 // GET /api/wellness/plan — Generate personalized wellness plan for logged-in patient
 router.get('/plan', auth, async (req, res) => {
@@ -44,8 +45,9 @@ router.get('/plan', auth, async (req, res) => {
       vitals: latestVitals
     };
 
-    const plan = await generateWellnessPlan(patientData);
+    const plan = await assistantService.generateWellnessPlan(patientData, req.query?.language || 'en');
 
+    res.set('X-AI-Status', 'active');
     res.json({
       plan: plan || 'AI wellness plan temporarily unavailable. Please try again later.',
       patientSummary: {

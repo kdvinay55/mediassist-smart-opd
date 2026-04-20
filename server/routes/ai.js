@@ -1,38 +1,49 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
-const { chatWithAI, generateTriageAssessment, generateTreatmentPlan } = require('../services/ai');
+const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
 
 const router = express.Router();
+const assistantService = new UnifiedAssistantService();
 
-// POST /api/ai/chat
 router.post('/chat', auth, async (req, res) => {
   try {
-    const { message, context } = req.body;
-    const response = await chatWithAI(message, context || '');
-    res.json({ response });
+    const result = await assistantService.analyzeSymptoms({
+      message: req.body?.message,
+      symptoms: req.body?.symptoms || [],
+      language: req.body?.language || 'en'
+    });
+    res.set('X-AI-Status', 'active');
+    res.json(result);
   } catch (error) {
-    res.json({ response: 'AI service is currently unavailable. Please try again later.' });
+    res.status(500).json({ response: error.message || 'Symptom analysis failed' });
   }
 });
 
-// POST /api/ai/triage
 router.post('/triage', auth, async (req, res) => {
   try {
-    const assessment = await generateTriageAssessment(req.body);
-    res.json({ assessment });
+    const result = await assistantService.triageVitals({
+      vitals: req.body?.vitals || {},
+      language: req.body?.language || 'en'
+    });
+    res.set('X-AI-Status', 'active');
+    res.json(result);
   } catch (error) {
-    res.status(500).json({ error: 'AI triage failed' });
+    res.status(500).json({ error: error.message || 'Triage failed' });
   }
 });
 
-// POST /api/ai/treatment-plan
 router.post('/treatment-plan', auth, async (req, res) => {
   try {
-    const { diagnosis, patientInfo } = req.body;
-    const plan = await generateTreatmentPlan(diagnosis, patientInfo);
-    res.json({ plan });
+    const plan = await assistantService.generateTreatmentPlan({
+      diagnosis: req.body?.diagnosis,
+      vitals: req.body?.vitals,
+      history: req.body?.history,
+      language: req.body?.language || 'en'
+    });
+    res.set('X-AI-Status', 'active');
+    res.json({ response: plan, plan });
   } catch (error) {
-    res.status(500).json({ error: 'AI treatment plan failed' });
+    res.status(500).json({ error: error.message || 'Treatment plan generation failed' });
   }
 });
 

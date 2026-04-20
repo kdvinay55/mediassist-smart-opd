@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart OPD Graph Viewer</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="./graph-view-data.js"></script>
+    <style>
+      :root {
+        --bg: #f4efe7;
+        --panel: rgba(255, 252, 246, 0.94);
+        --panel-strong: #fffaf0;
+        --line: rgba(42, 59, 79, 0.14);
+        --text: #1f2b38;
+        --muted: #607184;
+        --accent: #0f6cbd;
+        --accent-soft: rgba(15, 108, 189, 0.12);
+        --code: #1570ef;
+        --document: #b7791f;
+        --image: #0f766e;
+        --shadow: 0 16px 40px rgba(31, 43, 56, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        overflow: hidden;
+        font-family: "Segoe UI", "Inter", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(15, 108, 189, 0.12), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 28%),
+          linear-gradient(180deg, #f8f3ea 0%, var(--bg) 100%);
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        height: 100vh;
+        gap: 20px;
+        padding: 20px;
+        overflow: hidden;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+        min-height: 0;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        overflow: auto;
+        min-height: 0;
+      }
+
+      .sidebar-header {
+        padding: 24px 24px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      h1 {
+        margin: 14px 0 8px;
+        font-size: 30px;
+        line-height: 1.05;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .chip {
+        padding: 9px 12px;
+        border-radius: 16px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .chip strong {
+        color: var(--text);
+      }
+
+      .section {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section:last-child {
+        border-bottom: 0;
+      }
+
+      .section-title {
+        margin: 0 0 12px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        padding: 12px 14px;
+        font: inherit;
+        color: var(--text);
+        outline: none;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: rgba(15, 108, 189, 0.45);
+        box-shadow: 0 0 0 4px rgba(15, 108, 189, 0.1);
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .legend-item {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel-strong);
+        font-size: 13px;
+      }
+
+      .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+        margin-right: 8px;
+      }
+
+      .actions,
+      .quick-list,
+      .neighbor-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button,
+      .link-button {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        text-decoration: none;
+        transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+      }
+
+      button:hover,
+      .link-button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(15, 108, 189, 0.26);
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .quick-button {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .detail-card {
+        padding: 16px;
+        border-radius: 18px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+      }
+
+      .detail-name {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+
+      .detail-meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .detail-placeholder {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 16px;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+      }
+
+      .toolbar strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .toolbar span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .graph-shell {
+        position: relative;
+        overflow: hidden;
+        min-height: 0;
+        display: flex;
+        height: 100%;
+      }
+
+      #graph {
+        flex: 1 1 auto;
+        width: 100%;
+        height: 100%;
+        min-height: 480px;
+      }
+
+      .status {
+        position: absolute;
+        right: 18px;
+        bottom: 18px;
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 250, 240, 0.92);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .status strong {
+        color: var(--text);
+      }
+
+      .error {
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(127, 29, 29, 0.08);
+        border: 1px solid rgba(127, 29, 29, 0.12);
+        color: #7f1d1d;
+      }
+
+      @media (max-width: 1080px) {
+        body {
+          height: auto;
+          overflow: auto;
+        }
+
+        .app {
+          grid-template-columns: 1fr;
+          height: auto;
+          overflow: visible;
+        }
+
+        .graph-shell {
+          min-height: 70vh;
+          height: 70vh;
+        }
+
+        #graph {
+          min-height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="panel sidebar">
+        <div class="sidebar-header">
+          <div class="eyebrow">Graph Output</div>
+          <h1>Smart OPD Connectivity Map</h1>
+          <p class="subtitle">A cleaner companion viewer for the generated Graphify output. Search nodes, filter by type, and inspect exactly how each node connects to the rest of the graph.</p>
+          <div class="chip-row">
+            <div class="chip"><strong id="nodeCount">0</strong> nodes</div>
+            <div class="chip"><strong id="edgeCount">0</strong> edges</div>
+            <div class="chip"><strong id="communityCount">0</strong> communities</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Controls</h2>
+          <label for="search">Search node</label>
+          <input id="search" type="search" placeholder="AssistantRuntime, useAuth, lab, appointment..." />
+          <div style="height: 12px"></div>
+          <label for="typeFilter">Filter by type</label>
+          <select id="typeFilter">
+            <option value="all">All node types</option>
+            <option value="code">Code</option>
+            <option value="document">Document</option>
+            <option value="image">Image</option>
+          </select>
+          <div class="actions" style="margin-top: 12px">
+            <button id="resetView" type="button">Reset view</button>
+            <a class="link-button" href="./graph.html">Open stock Graphify view</a>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Legend</h2>
+          <div class="legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#1570ef"></span>Code</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#b7791f"></span>Document</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#0f766e"></span>Image</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Top Connected Nodes</h2>
+          <div id="godNodes" class="quick-list"></div>
+        </div>
+
+        <div class="section" style="overflow:auto">
+          <h2 class="section-title">Selected Node</h2>
+          <div id="detail" class="detail-card">
+            <p class="detail-placeholder">Select a node in the graph to inspect its source file, community, degree, and direct neighbors.</p>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="panel toolbar">
+          <div>
+            <strong id="toolbarTitle">Interactive network</strong>
+            <span id="toolbarSubtitle">Pan, zoom, and click nodes to reveal their direct relationships.</span>
+          </div>
+          <div class="chip">Filtered: <strong id="filteredCount">0</strong></div>
+        </div>
+
+        <section class="panel graph-shell">
+          <div id="graph"></div>
+          <div class="status">Viewer: <strong>clean mode</strong></div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const payload = window.GRAPH_VIEW || { graph: { nodes: [], links: [] }, analysis: {} };
+      const graph = payload.graph || {};
+      const analysis = payload.analysis || {};
+      const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+      const rawEdges = Array.isArray(graph.links) ? graph.links : Array.isArray(graph.edges) ? graph.edges : [];
+      const communityMap = new Map();
+      const communities = analysis.communities || {};
+
+      Object.entries(communities).forEach(([communityId, nodeIds]) => {
+        (nodeIds || []).forEach((nodeId) => communityMap.set(nodeId, communityId));
+      });
+
+      const typeColors = {
+        code: { background: '#dbeafe', border: '#1570ef', highlight: '#0f6cbd' },
+        document: { background: '#fef3c7', border: '#b7791f', highlight: '#a16207' },
+        image: { background: '#ccfbf1', border: '#0f766e', highlight: '#115e59' }
+      };
+
+      const typeShapes = {
+        code: 'dot',
+        document: 'box',
+        image: 'diamond'
+      };
+
+      const degreeMap = new Map();
+      rawEdges.forEach((edge) => {
+        const source = typeof edge.source === 'object' ? edge.source.id : edge.source;
+        const target = typeof edge.target === 'object' ? edge.target.id : edge.target;
+        degreeMap.set(source, (degreeMap.get(source) || 0) + 1);
+        degreeMap.set(target, (degreeMap.get(target) || 0) + 1);
+      });
+
+      const displayedNodes = rawNodes.map((node) => {
+        const fileType = node.file_type || 'code';
+        const palette = typeColors[fileType] || typeColors.code;
+        const degree = degreeMap.get(node.id) || 0;
+        const community = communityMap.get(node.id) || 'unassigned';
+        return {
+          id: node.id,
+          label: node.label,
+          fileType,
+          sourceFile: node.source_file || 'Unknown source',
+          sourceLocation: node.source_location || '',
+          community,
+          degree,
+          title: `${node.label}\nType: ${fileType}\nSource: ${node.source_file || 'Unknown'}\nCommunity: ${community}\nConnections: ${degree}`,
+          color: palette,
+          shape: typeShapes[fileType] || 'dot',
+          borderWidth: fileType === 'document' ? 2 : 1.5,
+          size: Math.max(18, Math.min(38, 16 + degree * 1.1)),
+          font: { face: 'Segoe UI', size: degree > 10 ? 18 : 14, color: '#1f2b38' }
+        };
+      });
+
+      const displayedEdges = rawEdges.map((edge, index) => {
+        const from = typeof edge.source === 'object' ? edge.source.id : edge.source;
+        const to = typeof edge.target === 'object' ? edge.target.id : edge.target;
+        return {
+          id: edge.id || `edge-${index}`,
+          from,
+          to,
+          relation: edge.relation || 'connected to',
+          confidence: edge.confidence || 'EXTRACTED',
+          sourceFile: edge.source_file || '',
+          title: `${edge.relation || 'connected to'}\nConfidence: ${edge.confidence || 'EXTRACTED'}${edge.source_file ? `\nSource: ${edge.source_file}` : ''}`,
+          color: edge.confidence === 'INFERRED' ? { color: 'rgba(183,121,31,0.36)', highlight: '#b7791f' } : { color: 'rgba(15,108,189,0.22)', highlight: '#0f6cbd' },
+          width: edge.confidence === 'INFERRED' ? 1.2 : 1.8,
+          dashes: edge.confidence === 'INFERRED',
+          smooth: { type: 'dynamic', roundness: 0.24 }
+        };
+      });
+
+      if (!window.vis) {
+        document.getElementById('graph').innerHTML = '<div class="error">The clean viewer needs the vis-network library from the CDN. If your network blocks it, use the stock <a href="./graph.html">graph.html</a> instead.</div>';
+        document.getElementById('toolbarTitle').textContent = 'CDN unavailable';
+        document.getElementById('toolbarSubtitle').textContent = 'The clean viewer could not load its graph rendering library.';
+      } else {
+        const nodesDataSet = new vis.DataSet(displayedNodes);
+        const edgesDataSet = new vis.DataSet(displayedEdges);
+        const network = new vis.Network(
+          document.getElementById('graph'),
+          { nodes: nodesDataSet, edges: edgesDataSet },
+          {
+            autoResize: true,
+            physics: {
+              stabilization: { enabled: true, iterations: 220, updateInterval: 25, fit: false },
+              barnesHut: { gravitationalConstant: -6800, springLength: 120, springConstant: 0.03, damping: 0.26, centralGravity: 0.2 },
+              minVelocity: 0.75
+            },
+            interaction: { hover: true, multiselect: false, navigationButtons: true, keyboard: true },
+            nodes: { shadow: true },
+            edges: { shadow: false, selectionWidth: 3 },
+            layout: { improvedLayout: true, randomSeed: 17 }
+          }
+        );
+
+        const searchInput = document.getElementById('search');
+        const typeFilter = document.getElementById('typeFilter');
+        const detail = document.getElementById('detail');
+        const filteredCount = document.getElementById('filteredCount');
+        const nodeCount = document.getElementById('nodeCount');
+        const edgeCount = document.getElementById('edgeCount');
+        const communityCount = document.getElementById('communityCount');
+        const godNodes = document.getElementById('godNodes');
+        const toolbarTitle = document.getElementById('toolbarTitle');
+        const toolbarSubtitle = document.getElementById('toolbarSubtitle');
+
+        nodeCount.textContent = String(displayedNodes.length);
+        edgeCount.textContent = String(displayedEdges.length);
+        communityCount.textContent = String(Object.keys(communities).length);
+
+        const FIT_ANIMATION = { duration: 420, easingFunction: 'easeInOutQuad' };
+        const STABILIZE_ITERATIONS = 180;
+
+        function refitGraph(animate = true) {
+          const ids = nodesDataSet.getIds();
+          if (!ids.length) return;
+          requestAnimationFrame(() => {
+            network.fit({
+              nodes: ids,
+              animation: animate ? FIT_ANIMATION : false
+            });
+          });
+        }
+
+        function settleGraph(onComplete) {
+          if (!nodesDataSet.getIds().length) {
+            if (typeof onComplete === 'function') onComplete();
+            return;
+          }
+          network.once('stabilized', () => {
+            if (typeof onComplete === 'function') onComplete();
+          });
+          network.stabilize(STABILIZE_ITERATIONS);
+        }
+
+        function renderTopConnectedNodes() {
+        const list = Array.isArray(analysis.god_nodes) ? analysis.god_nodes.slice(0, 8) : [];
+        godNodes.innerHTML = '';
+        list.forEach((entry) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'quick-button';
+          button.textContent = `${entry.label} (${entry.degree || entry.score || ''})`.trim();
+          button.addEventListener('click', () => focusByLabel(entry.label));
+          godNodes.appendChild(button);
+        });
+        }
+
+        function buildNeighborRows(nodeId, activeEdges) {
+        const neighbors = [];
+        activeEdges.forEach((edge) => {
+          if (edge.from === nodeId || edge.to === nodeId) {
+            const neighborId = edge.from === nodeId ? edge.to : edge.from;
+            const neighbor = nodesDataSet.get(neighborId) || displayedNodes.find((item) => item.id === neighborId);
+            if (!neighbor) return;
+            neighbors.push({ neighbor, edge });
+          }
+        });
+        neighbors.sort((left, right) => right.neighbor.degree - left.neighbor.degree || left.neighbor.label.localeCompare(right.neighbor.label));
+        return neighbors;
+        }
+
+        function renderDetail(nodeId) {
+        if (!nodeId) {
+          detail.innerHTML = '<p class="detail-placeholder">Select a node in the graph to inspect its source file, community, degree, and direct neighbors.</p>';
+          toolbarTitle.textContent = 'Interactive network';
+          toolbarSubtitle.textContent = 'Pan, zoom, and click nodes to reveal their direct relationships.';
+          return;
+        }
+
+        const node = nodesDataSet.get(nodeId) || displayedNodes.find((item) => item.id === nodeId);
+        if (!node) return;
+
+        const activeEdges = edgesDataSet.get();
+        const neighbors = buildNeighborRows(nodeId, activeEdges);
+        toolbarTitle.textContent = node.label;
+        toolbarSubtitle.textContent = `${node.fileType} node with ${neighbors.length} visible direct connections.`;
+
+        const neighborMarkup = neighbors.length
+          ? `<div class="neighbor-list">${neighbors.map((entry) => `<button type="button" data-target="${entry.neighbor.id}">${entry.neighbor.label} <span style="color:#607184">· ${entry.edge.relation}</span></button>`).join('')}</div>`
+          : '<p class="detail-placeholder">No visible neighbors under the current filter.</p>';
+
+        detail.innerHTML = `
+          <h3 class="detail-name">${node.label}</h3>
+          <p class="detail-meta">
+            Type: <strong>${node.fileType}</strong><br />
+            Source: <strong>${node.sourceFile}</strong>${node.sourceLocation ? `<br />Location: <strong>${node.sourceLocation}</strong>` : ''}<br />
+            Community: <strong>${node.community}</strong><br />
+            Degree: <strong>${node.degree}</strong>
+          </p>
+          <div style="height:14px"></div>
+          <h4 class="section-title" style="margin-bottom:10px">Direct Connections</h4>
+          ${neighborMarkup}
+        `;
+
+        detail.querySelectorAll('button[data-target]').forEach((button) => {
+          button.addEventListener('click', () => focusNode(button.getAttribute('data-target')));
+        });
+        }
+
+        function getVisibleNodes() {
+        const search = searchInput.value.trim().toLowerCase();
+        const type = typeFilter.value;
+        return displayedNodes.filter((node) => {
+          const matchesType = type === 'all' || node.fileType === type;
+          const haystack = `${node.label} ${node.sourceFile}`.toLowerCase();
+          const matchesSearch = !search || haystack.includes(search);
+          return matchesType && matchesSearch;
+        });
+        }
+
+        function applyFilters(focusId = null) {
+        const visibleNodes = getVisibleNodes();
+        const visibleIds = new Set(visibleNodes.map((node) => node.id));
+        const visibleEdges = displayedEdges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to));
+        nodesDataSet.clear();
+        edgesDataSet.clear();
+        nodesDataSet.add(visibleNodes);
+        edgesDataSet.add(visibleEdges);
+        filteredCount.textContent = `${visibleNodes.length} nodes / ${visibleEdges.length} edges`;
+
+        renderDetail(null);
+        settleGraph(() => {
+          if (focusId && visibleIds.has(focusId)) {
+            focusNode(focusId, false);
+            return;
+          }
+          refitGraph(false);
+        });
+        }
+
+        function focusNode(nodeId, animate = true) {
+        if (!nodesDataSet.get(nodeId)) return;
+        network.selectNodes([nodeId]);
+        network.focus(nodeId, {
+          scale: 1.15,
+          animation: animate ? { duration: 360, easingFunction: 'easeInOutQuad' } : false
+        });
+        renderDetail(nodeId);
+        }
+
+        function focusByLabel(label) {
+        const node = displayedNodes.find((entry) => entry.label === label);
+        if (!node) return;
+        searchInput.value = label;
+        applyFilters(node.id);
+        }
+
+        searchInput.addEventListener('input', () => applyFilters());
+        typeFilter.addEventListener('change', () => applyFilters());
+        document.getElementById('resetView').addEventListener('click', () => {
+          searchInput.value = '';
+          typeFilter.value = 'all';
+          applyFilters();
+        });
+
+        network.on('selectNode', (params) => {
+          renderDetail(params.nodes[0]);
+        });
+
+        network.on('deselectNode', () => {
+          renderDetail(null);
+        });
+
+        const resizeObserver = new ResizeObserver(() => {
+          refitGraph(false);
+        });
+        resizeObserver.observe(document.getElementById('graph'));
+
+        renderTopConnectedNodes();
+        applyFilters();
+      }
+    </script>
+  </body>
+</html>

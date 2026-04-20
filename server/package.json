@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "health:assistant": "node ../scripts/assistant_health_check.js",
+    "health:assistant:live": "node ../scripts/assistant_health_check.js --live",
+    "validate:assistant:multilingual": "node ../scripts/assistant_multilingual_validation.js",
+    "smoke:assistant:endpoints": "node ../scripts/assistant_endpoint_smoke.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -24,9 +28,9 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.5",
     "openai": "^6.34.0",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
     "tesseract.js": "^7.0.0",
-    "twilio": "^5.13.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

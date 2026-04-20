@@ -21,6 +21,8 @@ const appointmentSchema = new mongoose.Schema({
   notes: { type: String },
   queuePosition: { type: Number },
   estimatedWaitTime: { type: Number }, // minutes
+  // Unique token used by the Raspberry-Pi kiosk QR code (printed on patient ticket / shown in app)
+  qrToken: { type: String, unique: true, sparse: true, index: true },
   checkedInAt: { type: Date },
   completedAt: { type: Date }
 }, { timestamps: true });

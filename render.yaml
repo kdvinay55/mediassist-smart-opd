@@ -1,9 +1,11 @@
 services:
   - type: web
-    name: srm-biovault-api
+    name: mediassist-api
     runtime: node
-    buildCommand: cd server && npm ci && cd ../client && npm ci && npm run build
+    plan: free
+    buildCommand: cd server && npm ci
     startCommand: cd server && node index.js
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
@@ -13,5 +15,31 @@ services:
         generateValue: true
       - key: OPENAI_API_KEY
         sync: false
+      - key: CLIENT_URL
+        value: https://mediassist.vercel.app
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: "465"
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: FAST2SMS_API_KEY
+        sync: false
+      - key: OPENAI_MODEL_MEDICAL
+        value: gpt-5
+      - key: OPENAI_MODEL_ASSISTANT
+        value: gpt-5
+      - key: OPENAI_MODEL_NORMAL
+        value: gpt-5
+      - key: OPENAI_MODEL_STT
+        value: gpt-4o-transcribe
+      - key: OPENAI_MODEL_TTS
+        value: gpt-4o-mini-tts
+      - key: OPENAI_TTS_VOICE
+        value: alloy
+      - key: DEMO_MODE
+        value: "true"
       - key: CLIENT_URL
         sync: false

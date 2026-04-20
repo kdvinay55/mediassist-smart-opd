@@ -4,10 +4,11 @@ const LabResult = require('../models/LabResult');
 const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 const { auth, authorize } = require('../middleware/auth');
-const { interpretLabResults } = require('../services/ai');
+const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
 const { createNotification } = require('../services/simulationEngine');
 
 const router = express.Router();
+const assistantService = new UnifiedAssistantService();
 
 // POST /api/lab/order — Doctor orders a single lab test (legacy, still works)
 router.post('/order', auth, authorize('doctor'), async (req, res) => {
@@ -310,9 +311,14 @@ router.post('/:id/ai-interpret', auth, async (req, res) => {
     if (!lab || !lab.results || lab.results.length === 0) {
       return res.status(400).json({ error: 'No results to interpret' });
     }
-    const interpretation = await interpretLabResults(lab.results);
+    const interpretation = await assistantService.interpretLabResults({
+      results: lab.results,
+      testName: lab.testName,
+      language: req.body?.language || 'en'
+    });
     lab.aiInterpretation = interpretation;
     await lab.save();
+    res.set('X-AI-Status', 'active');
     res.json({ interpretation });
   } catch (error) {
     res.status(500).json({ error: 'AI interpretation failed' });

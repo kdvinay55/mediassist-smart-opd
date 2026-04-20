@@ -20,7 +20,7 @@ The backend serves the API **and** the web dashboard (from `client/dist`).
 2. Go to [render.com](https://render.com) → **New Web Service**
 3. Connect your GitHub repo
 4. Settings:
-   - **Build Command**: `cd client && npm ci && npm run build && cd ../server && npm ci`
+   - **Build Command**: `npm run deploy:build`
    - **Start Command**: `cd server && node index.js`
    - **Environment**: Node
 5. Add environment variables:
@@ -31,6 +31,7 @@ The backend serves the API **and** the web dashboard (from `client/dist`).
    OPENAI_API_KEY=<your-key>
    CLIENT_URL=https://your-app.onrender.com,capacitor://localhost
    ```
+   The build now blocks deployment if `npm run health:assistant:live` or `npm run validate:assistant:multilingual` fails.
 6. Deploy — the web dashboard is available at the Render URL
 
 ### Option B: Deploy to Railway
@@ -40,8 +41,23 @@ The backend serves the API **and** the web dashboard (from `client/dist`).
 3. Add a **MongoDB** plugin (or use MongoDB Atlas)
 4. Set the same environment variables as above
 5. Railway auto-detects the Dockerfile, or set:
-   - **Build**: `cd client && npm ci && npm run build && cd ../server && npm ci`
+   - **Build**: `npm run deploy:build`
    - **Start**: `cd server && node index.js`
+
+### Deployment Validation Command
+
+For any CI or deployment platform, `npm run validate:assistant:deploy` runs the two blocking assistant checks that now gate Render builds:
+
+```bash
+npm run validate:assistant:deploy
+```
+
+This executes:
+
+```bash
+npm --prefix server run health:assistant:live
+npm --prefix server run validate:assistant:multilingual
+```
 
 ### Option C: Docker
 
@@ -132,8 +148,9 @@ npx cap run android --livereload --external
 | `MONGO_URI` | Yes | MongoDB connection string |
 | `JWT_SECRET` | Yes | Secret for JWT signing |
 | `OPENAI_API_KEY` | No | OpenAI API key for AI features |
-| `OPENAI_MODEL_MEDICAL` | No | Model for medical analysis (default: gpt-4.1) |
-| `OPENAI_MODEL_NORMAL` | No | Model for normal tasks (default: gpt-4.1-mini) |
+| `OPENAI_MODEL_MEDICAL` | No | Model for medical analysis (default: gpt-5) |
+| `OPENAI_MODEL_ASSISTANT` | No | Preferred model for assistant reasoning and multilingual replies (default: gpt-5) |
+| `OPENAI_MODEL_NORMAL` | No | Backward-compatible assistant model override (default: gpt-5) |
 | `CLIENT_URL` | Yes | Comma-separated allowed origins for CORS |
 | `EMAIL_HOST` | No | SMTP host for email notifications |
 | `EMAIL_PORT` | No | SMTP port |

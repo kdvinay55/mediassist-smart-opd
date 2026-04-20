@@ -4,9 +4,53 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDate, getStatusColor } from '../lib/utils';
-import { Calendar, Clock, Plus, X, Search, MapPin, Stethoscope, Navigation, Activity, FlaskConical, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Plus, X, Search, MapPin, Stethoscope, Navigation, Activity, FlaskConical, CheckCircle, AlertTriangle, Loader2, QrCode } from 'lucide-react';
 
 const DEPARTMENTS = ['General Medicine', 'Cardiology', 'Orthopedics', 'Dermatology', 'ENT', 'Pediatrics', 'Ophthalmology', 'Gynecology', 'Neurology', 'Urology'];
+
+// Lazy-loads the kiosk QR PNG (auth required) and shows it inline.
+function KioskQr({ appointmentId }) {
+  const [open, setOpen] = useState(false);
+  const [src, setSrc] = useState(null);
+  const [err, setErr] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async () => {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (src || loading) return;
+    setLoading(true); setErr(null);
+    try {
+      const res = await api.get(`/appointments/${appointmentId}/qr`, { responseType: 'blob' });
+      setSrc(URL.createObjectURL(res.data));
+    } catch (e) {
+      setErr(e?.response?.data?.error || 'Failed to load QR');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <button type="button" onClick={toggle} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition">
+        <QrCode className="w-3.5 h-3.5" />
+        {open ? 'Hide kiosk QR' : 'Show kiosk QR'}
+      </button>
+      {open && (
+        <div className="mt-2 p-3 bg-white border border-gray-200 rounded-xl inline-block">
+          {loading && <div className="flex items-center gap-2 text-gray-500 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>}
+          {err && <p className="text-red-600 text-sm">{err}</p>}
+          {src && (
+            <>
+              <img src={src} alt="Vitals kiosk QR" className="w-48 h-48" />
+              <p className="text-xs text-gray-500 mt-2 max-w-xs">Scan this at the vitals kiosk. The machine will read your sensors and send the data automatically.</p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Appointments() {
   const { user } = useAuth();
@@ -277,6 +321,11 @@ export default function Appointments() {
                         )
                       ))}
                     </div>
+                  )}
+
+                  {/* Kiosk QR for upcoming patient appointments */}
+                  {user?.role === 'patient' && ['scheduled', 'checked-in', 'in-queue'].includes(apt.status) && (
+                    <KioskQr appointmentId={apt._id} />
                   )}
 
                   {/* Staff action buttons */}

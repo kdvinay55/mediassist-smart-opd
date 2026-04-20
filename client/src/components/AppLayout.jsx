@@ -9,6 +9,7 @@ import {
   Search, CheckCircle, MapPin, TrendingUp, TestTubes, Heart, FileText, Sparkles, Navigation, UserCheck
 } from 'lucide-react';
 import api from '../lib/api';
+import AssistantStatusIndicator from '../assistant/AssistantStatusIndicator';
 import VoiceAssistant from '../assistant/VoiceAssistant';
 
 const patientNav = [
@@ -26,7 +27,6 @@ const patientNav = [
   { path: '/follow-ups', label: 'Follow-ups', icon: Calendar },
   { path: '/health-tracking', label: 'Health Tracking', icon: Heart },
   { path: '/wellness-plan', label: 'Wellness Plan', icon: Heart },
-  { path: '/ai-chat', label: 'AI Assistant', icon: Sparkles },
   { path: '/feedback', label: 'Feedback', icon: Star },
   { path: '/notifications', label: 'Notifications', icon: Bell },
 ];
@@ -37,7 +37,6 @@ const doctorNav = [
   { path: '/appointments', label: 'Queue & Appointments', icon: Calendar },
   { path: '/opd-traffic', label: 'OPD Traffic', icon: Activity },
   { path: '/consultations', label: 'Consultations', icon: Stethoscope },
-  { path: '/ai-chat', label: 'AI Assistant', icon: Sparkles },
   { path: '/patients', label: 'Patients', icon: Users },
   { path: '/notifications', label: 'Notifications', icon: Bell },
 ];
@@ -99,7 +98,7 @@ export default function AppLayout({ children }) {
           <img src="/srm-logo.png" alt="SRM BioVault" className="w-9 h-9 rounded-full object-cover" />
           <div>
             <h1 className="text-lg font-bold text-gray-900 leading-none">SRM BioVault</h1>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wider">Medical AI Assistant</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider">Medical Operations Platform</p>
           </div>
         </div>
 
@@ -159,6 +158,7 @@ export default function AppLayout({ children }) {
           </div>
 
           <div className="flex items-center gap-2">
+            <AssistantStatusIndicator compact />
             <Link to="/notifications" className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition">
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">{unreadCount > 9 ? '9+' : unreadCount}</span>}
@@ -208,10 +208,10 @@ export default function AppLayout({ children }) {
             </motion.div>
           </AnimatePresence>
         </main>
+
+        <VoiceAssistant />
       </div>
 
-      {/* MediAssist Voice AI */}
-      <VoiceAssistant />
     </div>
   );
 }

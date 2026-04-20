@@ -8,7 +8,8 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "cd client && npm run build",
     "start": "cd server && node index.js",
-    "deploy:build": "cd client && npm ci && npm run build && cd ../server && npm ci",
+    "validate:assistant:deploy": "npm --prefix server run health:assistant:live && npm --prefix server run validate:assistant:multilingual",
+    "deploy:build": "npm --prefix server ci && npm run validate:assistant:deploy && npm --prefix client ci && npm --prefix client run build",
     "app:android": "cd client && npm run cap:run:android",
     "app:ios": "cd client && npx cap open ios"
   },

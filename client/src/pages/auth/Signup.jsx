@@ -7,7 +7,7 @@ import { User, Mail, Phone, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 export default function Signup() {
   const { signup } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'patient' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ export default function Signup() {
     setLoading(true);
     try {
       const result = await signup(form);
-      navigate('/verify', { state: { userId: result.userId } });
+      navigate('/verify', { state: { userId: result.userId, displayOtp: result.displayOtp, displayOtpReason: result.displayOtpReason, displayOtp: result.displayOtp, displayOtpReason: result.displayOtpReason } });
     } catch (err) {
       setError(err.response?.data?.error || 'Signup failed');
     } finally {

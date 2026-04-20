@@ -24,6 +24,7 @@ The app targets a multi-role workflow with patients, doctors, reception staff, l
 - `src/context/AuthContext.jsx` — authentication state, login/signup, OTP verify, logout
 - `src/lib/api.js` — Axios wrapper with JWT token injection and 401 handling
 - `src/components/AppLayout.jsx` — shared layout, sidebar, navigation
+- `src/assistant/` — MediAssist runtime, wake-word detection, speech capture, speech output, and widget UI
 - `src/pages/` — page components for patient, doctor, lab, admin, notifications, follow-up, etc.
 - `public/` — static assets and icons
 
@@ -32,8 +33,9 @@ The app targets a multi-role workflow with patients, doctors, reception staff, l
 - `config/db.js` — MongoDB connection wrapper
 - `middleware/auth.js` — JWT auth middleware and role authorization
 - `models/` — Mongoose schemas for users, appointments, consultations, labs, vitals, etc.
-- `routes/` — REST API endpoints for auth, patients, appointments, consultations, lab, notifications, workflow, etc.
-- `services/` — AI helpers, OTP/sms/email, simulation engine, notifications
+- `routes/` — REST API endpoints for auth, patients, appointments, consultations, lab, notifications, workflow, assistant, transcription, and TTS
+- `services/assistant/` — active assistant intent, medical reasoning, and OpenAI gateway services
+- `services/` — OTP/sms/email, simulation engine, notifications, QR helpers, and legacy AI compatibility shim
 
 ## 3. Backend Architecture
 
@@ -103,8 +105,17 @@ Key models:
 
 ### 3.8 Notification and AI services
 - `server/services/simulationEngine.js` handles notifications and demo workflows
-- `server/services/ai.js` provides AI diagnosis generation, lab interpretation, patient history summary, and referral letters
+- `server/services/assistant/IntentService.js` owns action-oriented assistant intent detection and execution
+- `server/services/assistant/MedicalService.js` owns safe patient-facing medical guidance and explanation
+- `server/services/assistant/OpenAIAssistantGateway.js` owns transcription, translation, assistant replies, and TTS
+- `server/services/ai.js` remains a legacy compatibility shim for older AI imports
 - `server/services/otp.js` supports OTP generation, normalization, and sending via email/SMS
+
+### 3.9 Voice assistant API surface
+- `server/routes/assistant.js` is the main authenticated voice-assistant command endpoint
+- `server/routes/transcribe.js` accepts recorded audio and returns text plus detected language
+- `server/routes/tts.js` returns synthesized assistant audio for browser playback
+- `server/index.js` mounts all three endpoints under `/api/assistant`, `/api/transcribe`, and `/api/tts`
 
 ## 4. Frontend Architecture
 
@@ -152,11 +163,21 @@ Key pages include:
 - `MedicationReminders.jsx`, `WellnessPlan.jsx`, `HealthTracking.jsx` — post-discharge care
 - `ReceptionDashboard.jsx` — reception staff appointment verification and doctor assignment
 
+### 4.5 MediAssist client graph
+- `client/src/components/AppLayout.jsx` mounts `VoiceAssistant` once at the global layout layer
+- `client/src/assistant/VoiceAssistant.jsx` owns the floating assistant shell, transcript log, and text input
+- `client/src/assistant/AssistantRuntime.js` is the client orchestration hub that connects UI, wake word, STT, TTS, and navigation
+- `client/src/assistant/AssistantStateMachine.js` enforces assistant state transitions across idle, wake-word, listening, processing, and speaking
+- `client/src/assistant/WakeWordService.js`, `SpeechRecognitionService.js`, and `VoiceOutputService.js` are the device-facing nodes used by the runtime
+
 ### 4.5 UI and branding
 - Uses Tailwind CSS utility classes across the app
 - Animations via Framer Motion
 - Icons from lucide-react
 - Many pages are organized around a card-based dashboard layout
+
+## 7. Graph-Based Assignment
+The current graph places the highest-centrality ownership on the auth shell and the MediAssist voice pipeline. The stable, project-wide node assignment map now lives in `GRAPH_NODE_ASSIGNMENTS.md` so the graph communities can be mapped back to real files and responsibilities without relying on generated output.
 
 ## 5. Feature Flow Summary
 

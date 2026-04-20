@@ -7,6 +7,7 @@ const WorkflowState = require('../models/WorkflowState');
 const Consultation = require('../models/Consultation');
 const { createNotification } = require('../services/simulationEngine');
 const { auth, authorize } = require('../middleware/auth');
+const { generateQrToken, toDataURL, toBuffer } = require('../services/qr');
 
 const router = express.Router();
 
@@ -94,8 +95,13 @@ router.post('/', auth, async (req, res) => {
       symptoms: symptoms || [],
       reasonForVisit,
       tokenNumber: count + 1,
+      qrToken: generateQrToken(),
       status: 'scheduled'
     });
+
+    // Pre-render a data-URL QR so the patient app can show it instantly.
+    let qrDataUrl = null;
+    try { qrDataUrl = await toDataURL(appointment.qrToken); } catch (e) { console.warn('QR render failed:', e.message); }
 
     // Notify all receptionists / admin users about new appointment
     const admins = await User.find({ role: 'admin', isActive: true }).select('_id');
@@ -113,7 +119,7 @@ router.post('/', auth, async (req, res) => {
       io.emit('new-appointment', { appointment });
     }
 
-    res.status(201).json(appointment);
+    res.status(201).json({ ...appointment.toObject(), qrDataUrl });
   } catch (error) {
     console.error('Create appointment error:', error);
     res.status(500).json({ error: 'Failed to create appointment' });
@@ -433,6 +439,32 @@ router.get('/doctor/assigned', auth, authorize('doctor'), async (req, res) => {
   } catch (error) {
     console.error('Doctor assigned error:', error);
     res.status(500).json({ error: 'Failed to get assigned patients' });
+  }
+});
+
+// GET /api/appointments/:id/qr — Returns the kiosk QR code as a PNG image.
+// Patient (owner) or any staff (doctor/admin/lab/reception) may fetch it.
+router.get('/:id/qr', auth, async (req, res) => {
+  try {
+    const appt = await Appointment.findById(req.params.id);
+    if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+
+    const isOwner = appt.patientId.toString() === req.user._id.toString();
+    const isStaff = ['doctor', 'admin', 'lab', 'reception'].includes(req.user.role);
+    if (!isOwner && !isStaff) return res.status(403).json({ error: 'Not authorized' });
+
+    if (!appt.qrToken) {
+      appt.qrToken = generateQrToken();
+      await appt.save();
+    }
+
+    const png = await toBuffer(appt.qrToken, { width: 360 });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(png);
+  } catch (error) {
+    console.error('QR endpoint error:', error.message);
+    res.status(500).json({ error: 'Failed to render QR' });
   }
 });
 

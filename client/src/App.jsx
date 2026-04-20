@@ -17,7 +17,6 @@ import Appointments from './pages/Appointments';
 import Consultations from './pages/Consultations';
 import LabResults from './pages/LabResults';
 import Medications from './pages/Medications';
-import AIChat from './pages/AIChat';
 import Feedback from './pages/Feedback';
 import Profile from './pages/Profile';
 
@@ -104,7 +103,6 @@ export default function App() {
         <Route path="/consultations" element={<ProtectedRoute><Consultations /></ProtectedRoute>} />
         <Route path="/lab-results" element={<ProtectedRoute><LabResults /></ProtectedRoute>} />
         <Route path="/medications" element={<ProtectedRoute><Medications /></ProtectedRoute>} />
-        <Route path="/ai-chat" element={<ProtectedRoute><AIChat /></ProtectedRoute>} />
         <Route path="/feedback" element={<ProtectedRoute><Feedback /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 

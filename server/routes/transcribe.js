@@ -1,41 +1,57 @@
 const express = require('express');
 const multer = require('multer');
 const { auth } = require('../middleware/auth');
-const { transcribeAudio } = require('../services/ai');
+const OpenAIAssistantGateway = require('../services/assistant/OpenAIAssistantGateway');
+const assistantRuntimeStatus = require('../services/assistant/AssistantRuntimeStatus');
 
 const router = express.Router();
-
-// Multer: store audio in memory (max 10MB)
+const gateway = new OpenAIAssistantGateway();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/ogg', 'audio/mp4', 'audio/m4a'];
-    if (allowed.includes(file.mimetype) || file.mimetype.startsWith('audio/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only audio files are allowed'), false);
-    }
-  }
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// POST /api/transcribe — Transcribe audio using OpenAI Whisper
 router.post('/', auth, upload.single('audio'), async (req, res) => {
   try {
+    if (!assistantRuntimeStatus.isLiveAssistantEnabled()) {
+      const runtime = assistantRuntimeStatus.getStatus();
+      res.set('X-AI-Status', runtime.demoMode ? 'demo' : 'disabled');
+      return res.status(503).json({
+        error: runtime.demoMode
+          ? 'Live transcription is unavailable. Demo fallback should use browser speech recognition.'
+          : 'Assistant transcription is disabled until startup health verification passes.',
+        demoMode: runtime.demoMode,
+        assistantStatus: runtime
+      });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    const text = await transcribeAudio(req.file.buffer, req.file.originalname || 'audio.webm');
-
-    if (!text) {
-      return res.status(500).json({ error: 'Transcription failed' });
+    const result = await gateway.transcribeAudio(req.file.buffer, req.file.originalname || 'assistant-command.webm', {
+      languageHint: req.body?.languageHint,
+      confidenceScore: req.body?.confidenceScore,
+      translationMode: req.body?.translationMode
+    });
+    if (!result || !result.text) {
+      return res.status(503).json({ error: 'Transcription failed' });
     }
 
-    res.json({ text: text.trim() });
+    res.set('X-AI-Status', 'active');
+    res.json({
+      text: result.text,
+      language: result.language,
+      duration: result.duration || null,
+      confidenceScore: result.confidenceScore,
+      confidence_score: result.confidence_score,
+      translationMode: result.translationMode,
+      translation_mode: result.translation_mode,
+      detectionMode: result.detectionMode,
+      detection_mode: result.detection_mode
+    });
   } catch (error) {
-    console.error('Transcription endpoint error:', error.message);
-    res.status(500).json({ error: 'Transcription failed' });
+    res.status(500).json({ error: error.message || 'Transcription failed' });
   }
 });
 

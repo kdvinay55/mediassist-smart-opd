@@ -7,10 +7,11 @@ const LabResult = require('../models/LabResult');
 const Patient = require('../models/Patient');
 const User = require('../models/User');
 const { auth, authorize } = require('../middleware/auth');
-const { generateDiagnosis, chatWithAI, generatePatientHistorySummary, generateReferralLetter } = require('../services/ai');
+const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
 const { createNotification, scheduleFollowUp } = require('../services/simulationEngine');
 
 const router = express.Router();
+const assistantService = new UnifiedAssistantService();
 
 // POST /api/consultations
 router.post('/', auth, authorize('doctor'), async (req, res) => {
@@ -81,25 +82,19 @@ router.post('/:id/ai-diagnosis', auth, authorize('doctor'), async (req, res) => 
       return res.status(404).json({ error: 'Consultation not found' });
     }
 
-    const result = await generateDiagnosis(
-      consultation.symptoms || [],
-      req.body.vitals,
-      req.body.history
-    );
-
-    // Try to parse structured response
-    let aiDiagnosis = [];
-    try {
-      const parsed = JSON.parse(result);
-      if (parsed.diagnoses) aiDiagnosis = parsed.diagnoses;
-    } catch {
-      aiDiagnosis = [{ condition: result, confidence: 0 }];
-    }
+    const result = await assistantService.generateConsultationDiagnosis({
+      consultation,
+      vitals: req.body?.vitals,
+      history: req.body?.history,
+      language: req.body?.language || 'en'
+    });
+    const aiDiagnosis = result.aiDiagnosis;
 
     consultation.aiSuggestedDiagnosis = aiDiagnosis;
     await consultation.save();
 
-    res.json({ aiDiagnosis, rawResponse: result });
+    res.set('X-AI-Status', 'active');
+    res.json({ aiDiagnosis, rawResponse: result.rawResponse });
   } catch (error) {
     console.error('AI diagnosis error:', error);
     res.status(500).json({ error: 'AI diagnosis failed' });
@@ -115,10 +110,11 @@ router.post('/:id/chat', auth, authorize('doctor'), async (req, res) => {
       return res.status(404).json({ error: 'Consultation not found' });
     }
 
-    // Build context from consultation
-    const context = `Patient symptoms: ${consultation.symptoms?.join(', ')}. Chief complaint: ${consultation.chiefComplaint || 'N/A'}.`;
-
-    const aiResponse = await chatWithAI(message, context);
+    const aiResponse = await assistantService.chatForConsultation({
+      consultation,
+      message,
+      language: req.body?.language || 'en'
+    });
 
     // Save to chat history
     consultation.aiChatHistory.push(
@@ -127,6 +123,7 @@ router.post('/:id/chat', auth, authorize('doctor'), async (req, res) => {
     );
     await consultation.save();
 
+    res.set('X-AI-Status', 'active');
     res.json({ response: aiResponse });
   } catch (error) {
     console.error('AI chat error:', error);
@@ -239,8 +236,7 @@ router.post('/:id/referral', auth, authorize('doctor'), async (req, res) => {
       ? new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()
       : 'Unknown';
 
-    // Generate AI referral letter
-    const referralLetter = await generateReferralLetter({
+    const referralLetter = await assistantService.generateReferralLetter({
       referringDoctor: consultation.doctorId?.name || req.user.name,
       fromDepartment: consultation.doctorId?.department || consultation.appointmentId?.department || 'General',
       patientName: consultation.patientId?.name || 'Patient',
@@ -252,7 +248,7 @@ router.post('/:id/referral', auth, authorize('doctor'), async (req, res) => {
       diagnosis: consultation.finalDiagnosis?.map(d => d.condition || d).join(', ') || consultation.chiefComplaint || '',
       history: consultation.notes || '',
       medications: consultation.prescriptions?.map(p => `${p.medication} ${p.dosage}`).join(', ') || 'None'
-    });
+    }, req.body?.language || 'en');
 
     // Save referral to consultation
     const referral = { department, doctor: doctor || '', reason, urgency: urgency || 'routine', referralLetter, createdAt: new Date() };
@@ -260,6 +256,7 @@ router.post('/:id/referral', auth, authorize('doctor'), async (req, res) => {
     consultation.referrals.push(referral);
     await consultation.save();
 
+    res.set('X-AI-Status', 'active');
     res.json({ referral, referralLetter, message: `Referral to ${department} generated successfully` });
   } catch (error) {
     console.error('Referral error:', error);
@@ -307,8 +304,9 @@ router.get('/:id/patient-history', auth, authorize('doctor'), async (req, res) =
       labResults: labResults.map(l => ({ testName: l.testName, status: l.status, results: l.results, createdAt: l.createdAt, priority: l.priority }))
     };
 
-    const summary = await generatePatientHistorySummary(patientData);
+    const summary = await assistantService.summarizePatientHistory(patientData, req.query?.language || 'en');
 
+    res.set('X-AI-Status', 'active');
     res.json({
       summary: summary || 'AI summary temporarily unavailable. See raw data below.',
       patientData: {

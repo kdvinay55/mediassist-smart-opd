@@ -5,6 +5,17 @@ const BASE_URL = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api`
   : '/api';
 
+export function buildApiUrl(path = '') {
+  if (!path) {
+    return BASE_URL;
+  }
+  return `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export function getStoredAuthToken() {
+  return localStorage.getItem('token');
+}
+
 const api = axios.create({
   baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' }

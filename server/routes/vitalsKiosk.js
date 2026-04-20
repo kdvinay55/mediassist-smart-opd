@@ -1,12 +1,14 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
-const { queryOllama } = require('../services/ai');
+const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
 const Appointment = require('../models/Appointment');
 const Vitals = require('../models/Vitals');
 const Patient = require('../models/Patient');
 const Tesseract = require('tesseract.js');
+const { parseQrPayload } = require('../services/qr');
 
 const router = express.Router();
+const assistantService = new UnifiedAssistantService();
 
 // Extract vitals values from OCR text using multi-strategy approach
 // Handles both clean single-column text AND garbled 2-column interleaved OCR
@@ -373,8 +375,12 @@ router.post('/:appointmentId/save', auth, async (req, res) => {
           patient.currentMedications?.length ? `Medications: ${patient.currentMedications.join(', ')}` : null,
         ].filter(Boolean).join('. ') : 'New patient';
 
-        const aiPrompt = `Brief clinical summary (3 sentences max):\nVitals: ${currentVitalsStr}\nPatient: ${patientInfo}\nRisk: ${riskLabel}\nAssess and flag concerns.`;
-        const aiResult = await queryOllama(aiPrompt, 'You are a medical AI. Be concise.');
+        const aiResult = await assistantService.generateKioskSummary({
+          currentVitalsSummary: currentVitalsStr,
+          patientInfo,
+          riskLabel,
+          language: 'en'
+        });
         if (aiResult) {
           await Vitals.findByIdAndUpdate(vitals._id, { aiTriageAssessment: aiResult });
           if (io) io.to(`patient-${appointment.patientId}`).emit('vitals-ai-updated', { vitalsId: vitals._id, aiSummary: aiResult });
@@ -386,6 +392,117 @@ router.post('/:appointmentId/save', auth, async (req, res) => {
   } catch (error) {
     console.error('🚨 Vitals kiosk save error:', error.message);
     res.status(500).json({ error: 'Failed to save vitals' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Raspberry-Pi unattended kiosk endpoint
+// The Pi:
+//   1. scans the patient's QR with its camera (decoded payload: SMARTOPD:APT:<token>)
+//   2. reads vitals from connected sensors (BP cuff, SpO2, temp probe, scale, etc.)
+//   3. POSTs them here in one shot — no patient login required.
+//
+// Auth: X-Kiosk-Key header MUST equal process.env.KIOSK_DEVICE_KEY.
+// Body: { qrPayload, vitals: { bloodPressure:{systolic,diastolic}, heartRate, temperature, oxygenSaturation, respiratoryRate, weight, height, bloodSugar, painLevel }, deviceId? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/device-scan', async (req, res) => {
+  try {
+    const expected = process.env.KIOSK_DEVICE_KEY;
+    if (!expected || expected === 'replace_me_with_a_long_random_string') {
+      return res.status(503).json({ error: 'Kiosk device key not configured on server' });
+    }
+    const provided = req.header('x-kiosk-key');
+    if (!provided || provided !== expected) {
+      return res.status(401).json({ error: 'Invalid kiosk device key' });
+    }
+
+    const { qrPayload, vitals = {}, deviceId } = req.body || {};
+    const token = parseQrPayload(qrPayload);
+    if (!token) return res.status(400).json({ error: 'Invalid or missing QR payload' });
+
+    const appointment = await Appointment.findOne({ qrToken: token });
+    if (!appointment) return res.status(404).json({ error: 'No appointment matches this QR' });
+    if (['completed', 'cancelled', 'no-show'].includes(appointment.status)) {
+      return res.status(409).json({ error: `Appointment is already ${appointment.status}` });
+    }
+
+    // Validate + sanitise the vitals payload from the sensors.
+    const { valid, issues } = validateVitals(vitals);
+    if (Object.keys(valid).length === 0) {
+      return res.status(400).json({ error: 'No usable vitals received from device', issues });
+    }
+
+    // Compute BMI if both weight + height present.
+    if (valid.weight && valid.height) {
+      const m = valid.height / 100;
+      valid.bmi = Math.round((valid.weight / (m * m)) * 10) / 10;
+    }
+
+    // Optional AI triage assessment (uses gpt-4.1)
+    let aiTriageAssessment = null;
+    let triageLevel = 'green';
+    try {
+      const triage = await assistantService.triageVitals({ vitals: valid, language: 'en' });
+      aiTriageAssessment = triage.assessment;
+      triageLevel = triage.triageLevel || 'green';
+    } catch (e) { /* non-fatal */ }
+
+    const record = await Vitals.create({
+      patientId: appointment.patientId,
+      appointmentId: appointment._id,
+      ...valid,
+      triageLevel,
+      aiTriageAssessment,
+      notes: deviceId ? `Recorded by kiosk ${deviceId}` : 'Recorded by kiosk'
+    });
+
+    appointment.status = 'vitals-done';
+    await appointment.save();
+
+    // Realtime updates
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`patient-${appointment.patientId}`).emit('vitals-recorded', { appointment, vitals: record });
+      io.to(`dept-${appointment.department}`).emit('queue-update', { appointment });
+    }
+
+    res.json({
+      success: true,
+      message: 'Vitals recorded successfully',
+      appointmentId: appointment._id,
+      patientId: appointment.patientId,
+      vitals: record,
+      issues
+    });
+  } catch (error) {
+    console.error('🚨 Kiosk device-scan error:', error.message);
+    res.status(500).json({ error: 'Failed to record vitals from kiosk' });
+  }
+});
+
+// GET /api/vitals-kiosk/lookup?qrPayload=... — used by the kiosk display to show
+// the patient name *before* taking vitals (no PHI other than first name).
+router.get('/lookup', async (req, res) => {
+  try {
+    const expected = process.env.KIOSK_DEVICE_KEY;
+    if (!expected || req.header('x-kiosk-key') !== expected) {
+      return res.status(401).json({ error: 'Invalid kiosk device key' });
+    }
+    const token = parseQrPayload(req.query.qrPayload);
+    if (!token) return res.status(400).json({ error: 'Invalid QR payload' });
+    const appt = await Appointment.findOne({ qrToken: token }).populate('patientId', 'name').lean();
+    if (!appt) return res.status(404).json({ error: 'Not found' });
+    res.json({
+      appointmentId: appt._id,
+      department: appt.department,
+      timeSlot: appt.timeSlot,
+      tokenNumber: appt.tokenNumber,
+      patientName: appt.patientId?.name?.split(' ')[0] || 'Patient',
+      status: appt.status
+    });
+  } catch (error) {
+    console.error('Kiosk lookup error:', error.message);
+    res.status(500).json({ error: 'Lookup failed' });
   }
 });
 

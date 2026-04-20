@@ -9,9 +9,14 @@ export default function VerifyOTP() {
   const location = useLocation();
   const navigate = useNavigate();
   const userId = location.state?.userId;
+  const initialDisplayOtp = location.state?.displayOtp;
+  const initialDisplayReason = location.state?.displayOtpReason;
 
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(initialDisplayOtp ? initialDisplayOtp.split('') : ['', '', '', '', '', '']);
+  const [displayOtp, setDisplayOtp] = useState(initialDisplayOtp || '');
+  const [displayReason, setDisplayReason] = useState(initialDisplayReason || '');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
   const inputRefs = useRef([]);
@@ -73,12 +78,20 @@ export default function VerifyOTP() {
 
   const handleResend = async () => {
     try {
-      await resendOTP(userId);
+      const res = await resendOTP(userId);
       setResendTimer(60);
-      setOtp(['', '', '', '', '', '']);
       setError('');
+      if (res?.displayOtp) {
+        setDisplayOtp(res.displayOtp);
+        setDisplayReason(res.displayOtpReason || '');
+        setOtp(res.displayOtp.split(''));
+        setInfo('A new verification code has been generated.');
+      } else {
+        setOtp(['', '', '', '', '', '']);
+        setInfo('A new verification code has been sent.');
+      }
     } catch (err) {
-      setError('Failed to resend OTP');
+      setError(err.response?.data?.error || 'Failed to resend code');
     }
   };
 
@@ -92,9 +105,61 @@ export default function VerifyOTP() {
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify Your Account</h2>
           <p className="text-gray-500 mb-8">Enter the 6-digit code sent to your email and phone</p>
 
+
+          {displayOtp && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-4 rounded-xl mb-6 text-left"
+            >
+              {displayReason && <p className="text-xs mb-2">{displayReason}</p>}
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">Your verification code</p>
+                  <p className="font-mono text-2xl font-bold tracking-widest">{displayOtp}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOtp(displayOtp.split(''))}
+                  className="px-3 py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600"
+                >
+                  Use code
+                </button>
+              </div>
+            </motion.div>
+          )}
           {error && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 text-sm">
               {error}
+            </motion.div>
+          )}
+
+          {info && !error && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl mb-4 text-sm">
+              {info}
+            </div>
+          )}
+
+          {displayOtp && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-4 rounded-xl mb-6 text-left"
+            >
+              {displayReason && <p className="text-xs mb-2">{displayReason}</p>}
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">Your verification code</p>
+                  <p className="font-mono text-2xl font-bold tracking-widest">{displayOtp}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOtp(displayOtp.split(''))}
+                  className="px-3 py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600"
+                >
+                  Use code
+                </button>
+              </div>
             </motion.div>
           )}
 

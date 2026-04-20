@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
-const twilio = require('twilio');
+const axios = require('axios');
 
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const FAST2SMS_URL = 'https://www.fast2sms.com/dev/bulkV2';
 
 const emailTransporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -17,8 +17,9 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Internal storage format: keep the +91 prefix so user lookups remain consistent.
 function normalizePhone(phone) {
-  let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+  let cleaned = String(phone).replace(/[\s\-\(\)]/g, '');
   if (/^[6-9]\d{9}$/.test(cleaned)) {
     cleaned = '+91' + cleaned;
   }
@@ -26,6 +27,14 @@ function normalizePhone(phone) {
     cleaned = '+' + cleaned;
   }
   return cleaned;
+}
+
+// Fast2SMS expects a bare 10-digit Indian number (no + or country code).
+function toFast2SmsNumber(phone) {
+  const digits = String(phone).replace(/\D/g, '');
+  // Strip leading 91 if present, then take the last 10 digits.
+  const stripped = digits.startsWith('91') ? digits.slice(2) : digits;
+  return stripped.slice(-10);
 }
 
 async function sendEmailOTP(email, otp, name) {
@@ -53,13 +62,38 @@ async function sendEmailOTP(email, otp, name) {
   return emailTransporter.sendMail(mailOptions);
 }
 
+// Send OTP via Fast2SMS (Indian numbers only).
 async function sendSMSOTP(phone, otp) {
-  const normalizedPhone = normalizePhone(phone);
-  return twilioClient.messages.create({
-    body: `Your SRM BioVault verification code is: ${otp}. Valid for 10 minutes.`,
-    from: process.env.TWILIO_PHONE_NUMBER,
-    to: normalizedPhone
-  });
+  if (!process.env.FAST2SMS_API_KEY) {
+    throw new Error('FAST2SMS_API_KEY not configured');
+  }
+  const number = toFast2SmsNumber(phone);
+  if (number.length !== 10) {
+    throw new Error(`Fast2SMS requires a 10-digit Indian number; got "${phone}"`);
+  }
+
+  const { data } = await axios.post(
+    FAST2SMS_URL,
+    {
+      route: 'otp',
+      variables_values: otp,
+      numbers: number
+    },
+    {
+      headers: {
+        authorization: process.env.FAST2SMS_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
+    }
+  );
+
+  if (data && data.return === false) {
+    // Fast2SMS returns { return: false, message: [...] } on failure.
+    const msg = Array.isArray(data.message) ? data.message.join('; ') : (data.message || 'Unknown Fast2SMS error');
+    throw new Error(msg);
+  }
+  return data;
 }
 
 async function sendOTP(email, phone, otp, name) {
@@ -76,7 +110,7 @@ async function sendOTP(email, phone, otp, name) {
     await sendSMSOTP(phone, otp);
     results.sms = true;
   } catch (err) {
-    console.error('SMS OTP error:', err.message);
+    console.error('SMS OTP error:', err.response?.data ? JSON.stringify(err.response.data) : err.message);
   }
 
   if (!results.email && !results.sms) {
