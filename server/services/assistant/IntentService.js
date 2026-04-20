@@ -3,6 +3,8 @@ const LabResult = require('../../models/LabResult');
 const Medication = require('../../models/Medication');
 const Notification = require('../../models/Notification');
 const WorkflowState = require('../../models/WorkflowState');
+const User = require('../../models/User');
+const Patient = require('../../models/Patient');
 const { generateQrToken } = require('../qr');
 const { ASSISTANT_MODELS } = require('./config');
 
@@ -75,6 +77,45 @@ function extractBookingEntities(text) {
   return entities;
 }
 
+function extractVitalsEntities(lower) {
+  const entities = {};
+  const tempMatch = lower.match(/(\d{2,3}(?:\.\d)?)\s*(?:degree|°|f\b|fahrenheit|celsius)/i);
+  if (tempMatch) entities.temperature = tempMatch[1];
+  const bpMatch = lower.match(/(\d{2,3})\s*(?:\/|over)\s*(\d{2,3})/);
+  if (bpMatch) entities.bloodPressure = `${bpMatch[1]}/${bpMatch[2]}`;
+  const hrMatch = lower.match(/(\d{2,3})\s*(?:bpm|beats|heart rate|pulse)/i);
+  if (hrMatch) entities.heartRate = hrMatch[1];
+  const spo2Match = lower.match(/(\d{2,3})\s*(?:%|percent|spo2|oxygen)/i);
+  if (spo2Match) entities.oxygenSaturation = spo2Match[1];
+  return entities;
+}
+
+function extractPatientEditEntities(lower) {
+  const entities = {};
+  const fieldMap = [
+    [/\b(name)\b/, 'name'],
+    [/\b(phone|mobile|number)\b/, 'phone'],
+    [/\b(email|mail)\b/, 'email'],
+    [/\b(address|city|street|pincode)\b/, 'address'],
+    [/\b(blood group|blood type)\b/, 'bloodGroup'],
+    [/\b(allerg(?:y|ies))\b/, 'allergies'],
+    [/\b(emergency contact)\b/, 'emergencyContact'],
+    [/\b(date of birth|dob|birthday)\b/, 'dateOfBirth'],
+    [/\b(gender|sex)\b/, 'gender'],
+    [/\b(chronic|condition)\b/, 'chronicConditions'],
+  ];
+  for (const [pattern, field] of fieldMap) {
+    if (pattern.test(lower)) {
+      entities.field = field;
+      break;
+    }
+  }
+
+  const toMatch = lower.match(/(?:to|as|with|is)\s+["']?([^"'.,]+)["']?/i);
+  if (toMatch) entities.newValue = toMatch[1].trim();
+  return entities;
+}
+
 function ruleBasedIntent(text) {
   const lower = text.toLowerCase();
   const hasAppointment = /\bappointment\b/.test(lower);
@@ -97,8 +138,14 @@ function ruleBasedIntent(text) {
   if (lower.includes('lab result') || lower.includes('lab results') || lower.includes('test result')) {
     return { intent: 'SHOW_LAB_RESULTS', entities: {}, confidence: 0.95 };
   }
-  if (/\b(medication|medicine|drugs|pills|prescription)\b/.test(lower)) {
+  if (/\b(medications?|medicines?|drugs|pills|prescriptions?)\b/.test(lower)) {
     return { intent: 'SHOW_MEDICATIONS', entities: {}, confidence: 0.95 };
+  }
+  if (/\b(vitals?|temperature|blood pressure|bp|heart rate|pulse|oxygen|spo2)\b/.test(lower) && /\b(enter|record|log|add|update|submit|check|measure)\b/.test(lower)) {
+    return { intent: 'ENTER_VITALS', entities: extractVitalsEntities(lower), confidence: 0.95 };
+  }
+  if (/\b(update|change|edit|modify|correct)\b/.test(lower) && /\b(name|phone|email|address|blood group|allergies?|allergy|emergency contact|date of birth|dob|gender|medication|chronic|condition)\b/.test(lower)) {
+    return { intent: 'EDIT_PATIENT', entities: extractPatientEditEntities(lower), confidence: 0.90 };
   }
   if (lower.includes('reminder')) {
     return { intent: 'SET_REMINDER', entities: {}, confidence: 0.95 };
@@ -150,9 +197,10 @@ async function pickAvailableSlot(date, department, requested) {
 }
 
 class IntentService {
-  constructor({ logger } = {}) {
+  constructor({ logger, openaiClient } = {}) {
     this.logger = logger;
     this.model = ASSISTANT_MODELS.assistantLogic;
+    this.openai = openaiClient || null;
     this.handlers = {
       BOOK_APPOINTMENT: this.bookAppointment.bind(this),
       CANCEL_APPOINTMENT: this.cancelAppointment.bind(this),
@@ -161,6 +209,7 @@ class IntentService {
       SET_REMINDER: this.setReminder.bind(this),
       SHOW_MEDICATIONS: this.showMedications.bind(this),
       ENTER_VITALS: this.enterVitals.bind(this),
+      EDIT_PATIENT: this.editPatient.bind(this),
       GET_QUEUE: this.getQueue.bind(this),
       GET_WAIT_TIME: this.getWaitTime.bind(this),
       GET_ROOM: this.getRoom.bind(this),
@@ -173,7 +222,40 @@ class IntentService {
   async detectIntent(text) {
     const input = String(text || '').trim();
     this.logger?.('intent_detect_requested', { model: this.model, chars: input.length });
-    return ruleBasedIntent(input);
+    const ruleResult = ruleBasedIntent(input);
+
+    if (ruleResult.intent !== 'GENERAL_CHAT' || !this.openai) {
+      return ruleResult;
+    }
+
+    try {
+      const validIntents = Object.keys(this.handlers).join(', ');
+      const response = await this.openai.chat.completions.create({
+        model: this.model,
+        temperature: 0,
+        max_completion_tokens: 60,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an intent classifier for a hospital assistant. Classify the user message into exactly one intent. Valid intents: ${validIntents}. Reply with a JSON object: {"intent":"INTENT_NAME","confidence":0.0-1.0}. If unsure, use GENERAL_CHAT.`
+          },
+          { role: 'user', content: input }
+        ]
+      });
+
+      const raw = response?.choices?.[0]?.message?.content?.trim() || '';
+      const match = raw.match(/\{[^}]+\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.intent && this.handlers[parsed.intent] && parsed.confidence >= 0.75) {
+          return { intent: parsed.intent, entities: extractBookingEntities(input), confidence: parsed.confidence };
+        }
+      }
+    } catch (err) {
+      this.logger?.('ai_intent_fallback_error', { error: err.message });
+    }
+
+    return ruleResult;
   }
 
   async execute(intent, entities = {}, context = {}) {
@@ -324,6 +406,75 @@ class IntentService {
         : 'Please navigate to your appointment to enter vitals.',
       action: 'NAVIGATE',
       navigateTo: '/appointments'
+    };
+  }
+
+  async editPatient(entities, { userId }) {
+    const field = entities.field;
+    const newValue = entities.newValue;
+
+    if (!field) {
+      return {
+        success: true,
+        message: 'Which detail would you like to update? You can change your name, phone, email, address, blood group, allergies, emergency contact, or date of birth.',
+        action: 'NAVIGATE',
+        navigateTo: '/profile'
+      };
+    }
+
+    if (!newValue) {
+      return {
+        success: true,
+        message: `What would you like to change your ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} to? Please say the new value.`,
+      };
+    }
+
+    const userFields = ['name', 'phone', 'email'];
+    const patientFields = ['bloodGroup', 'gender', 'dateOfBirth', 'allergies', 'chronicConditions', 'address', 'emergencyContact'];
+
+    if (userFields.includes(field)) {
+      const updateData = { [field]: newValue.trim() };
+      if (field === 'email') updateData.email = newValue.trim().toLowerCase();
+      await User.findByIdAndUpdate(userId, updateData);
+      return {
+        success: true,
+        message: `Your ${field} has been updated to "${newValue}".`,
+        action: 'NAVIGATE',
+        navigateTo: '/profile'
+      };
+    }
+
+    if (patientFields.includes(field)) {
+      let updateValue = newValue.trim();
+      if (field === 'allergies' || field === 'chronicConditions') {
+        updateValue = newValue.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+      }
+      if (field === 'bloodGroup') {
+        const validGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        const normalized = newValue.toUpperCase().replace(/\s+/g, '').replace('POSITIVE', '+').replace('NEGATIVE', '-');
+        if (!validGroups.includes(normalized)) {
+          return { success: false, message: `Invalid blood group "${newValue}". Valid options are: ${validGroups.join(', ')}.` };
+        }
+        updateValue = normalized;
+      }
+      await Patient.findOneAndUpdate(
+        { userId },
+        { [field]: updateValue, userId },
+        { upsert: true }
+      );
+      return {
+        success: true,
+        message: `Your ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} has been updated.`,
+        action: 'NAVIGATE',
+        navigateTo: '/profile'
+      };
+    }
+
+    return {
+      success: false,
+      message: `Sorry, I can't update "${field}" via voice. Please update it from your profile page.`,
+      action: 'NAVIGATE',
+      navigateTo: '/profile'
     };
   }
 

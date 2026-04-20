@@ -262,7 +262,7 @@ class UnifiedAssistantService {
     this.logger = logger;
     this.gateway = gateway || new OpenAIAssistantGateway({ logger: this.log.bind(this) });
     this.medicalService = medicalService || new MedicalService({ logger: this.log.bind(this) });
-    this.intentService = intentService || new IntentService({ logger: this.log.bind(this) });
+    this.intentService = intentService || new IntentService({ logger: this.log.bind(this), openaiClient: this.gateway.client });
   }
 
   log(event, payload = {}) {
