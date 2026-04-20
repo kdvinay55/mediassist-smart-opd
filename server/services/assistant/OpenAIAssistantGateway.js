@@ -293,17 +293,11 @@ STYLE:
       };
     };
 
-    let result = buildResult(
-      await runTranscription(normalizedLanguageHint),
-      normalizedLanguageHint ? 'hinted' : 'automatic'
-    );
-
-    if (normalizedLanguageHint && result.confidenceScore < 0.6) {
-      const automaticResult = buildResult(await runTranscription(''), 'automatic');
-      if (automaticResult.confidenceScore >= result.confidenceScore) {
-        result = automaticResult;
-      }
-    }
+    // Per-turn language independence: NEVER bias STT with the previous turn's
+    // language. The session hint is kept only as a tiebreaker for confidence
+    // scoring downstream — the audio model must freely detect what the user
+    // actually spoke (Tamil vs Telugu vs Hindi vs Kannada vs Malayalam).
+    const result = buildResult(await runTranscription(''), 'automatic');
 
     this.logger?.('assistant_transcription_complete', {
       model: this.transcriptionModel,
@@ -335,15 +329,15 @@ STYLE:
 
     if (/gpt-4o.*tts/i.test(this.ttsModel)) {
       const pronunciationGuards = {
-        te: 'The text is in TELUGU. Pronounce every word using authentic Telugu phonetics. NEVER use Tamil, Kannada, or Hindi pronunciation. Telugu has soft "a" endings ("vaccharu" not "vandhaar"); use proper Telugu vowel sounds.',
-        hi: 'The text is in HINDI. Use clean Hindi/Hindustani pronunciation. Do not Sanskritize.',
-        ta: 'The text is in TAMIL. Use authentic Tamil phonetics, not Telugu or Malayalam.',
-        kn: 'The text is in KANNADA. Use authentic Kannada phonetics.',
-        ml: 'The text is in MALAYALAM. Use authentic Malayalam phonetics.',
-        en: 'The text is in English (possibly Indian English). Use clear, neutral pronunciation.'
+        te: 'CRITICAL: Text is TELUGU only. Use ONLY authentic Telugu phonetics (soft "a" endings like "vaccharu", "cheppandi", "miru"). NEVER pronounce as Tamil, Kannada, Hindi, or Malayalam. Telugu has distinct vowels — do not borrow Tamil sounds.',
+        hi: 'CRITICAL: Text is HINDI only. Use clean Hindustani pronunciation. Do NOT mix Telugu/Tamil/Kannada/Malayalam phonetics.',
+        ta: 'CRITICAL: Text is TAMIL only. Use ONLY authentic Tamil phonetics (sounds like "vandhaar", "solunga", "neenga"). NEVER pronounce as Telugu (no soft "a" endings), Kannada, Hindi, or Malayalam. Tamil has unique retroflex consonants and characteristic Dravidian rhythm.',
+        kn: 'CRITICAL: Text is KANNADA only. Use ONLY authentic Kannada phonetics. NEVER pronounce as Telugu, Tamil, Hindi, or Malayalam.',
+        ml: 'CRITICAL: Text is MALAYALAM only. Use ONLY authentic Malayalam phonetics with characteristic clusters. NEVER pronounce as Tamil, Telugu, Kannada, or Hindi.',
+        en: 'Text is English (Indian English accent acceptable). Use clear, neutral pronunciation.'
       };
       const guard = pronunciationGuards[detectedLanguage] || pronunciationGuards.en;
-      params.instructions = `You are MediAssist, a warm friendly hospital assistant speaking ${languageLabel}. ${guard} Speak naturally and conversationally — like a helpful human, never robotic or monotone. Use natural pauses and gentle emphasis. If the text mixes English and ${languageLabel}, switch fluently between them keeping each word in its native pronunciation.`;
+      params.instructions = `You are MediAssist, a warm friendly hospital assistant speaking ${languageLabel}. ${guard} Speak naturally and conversationally like a helpful human — not robotic or monotone. Flow smoothly between sentences with minimal pauses. If the text mixes English and ${languageLabel}, switch fluently while keeping each word in its native pronunciation.`;
     }
 
     const response = await this.client.audio.speech.create(params);

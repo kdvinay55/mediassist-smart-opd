@@ -211,6 +211,59 @@ export default class VoiceOutputService {
     return this.speaking;
   }
 
+  /**
+   * Fetch a TTS audio blob without playing it. Use this to prefetch the next
+   * sentence's audio while the current one is still playing — eliminates
+   * the inter-sentence gap that streaming TTS introduces.
+   */
+  async fetchSpeechBlob(text, options = {}) {
+    if (!text || !this.apiClient) return null;
+    const response = await this.apiClient.post(
+      '/tts',
+      {
+        text,
+        voice: options.voice || DEFAULT_TTS_VOICE,
+        format: 'mp3',
+        speed: options.speed || 1.15,
+        language: options.language || 'en'
+      },
+      { responseType: 'blob', timeout: 30000 }
+    );
+    if (!response?.data || response.data.size === 0) return null;
+    return response.data;
+  }
+
+  /**
+   * Play a pre-fetched audio blob (returned from fetchSpeechBlob). Resolves
+   * when playback ends so the caller can sequence multiple blobs back-to-back.
+   */
+  async playBlob(blob) {
+    if (!blob) return;
+    await this.stop();
+    const token = ++this.playbackToken;
+    this.speaking = true;
+    this.onStart?.();
+    return new Promise((resolve) => {
+      this.currentResolve = resolve;
+      const finish = ({ notifyEnd = false, error } = {}) => {
+        const pending = this.currentResolve;
+        this.currentResolve = null;
+        this.cleanupPlayback();
+        this.speaking = false;
+        if (error) this.onError?.(error);
+        else if (notifyEnd) this.onEnd?.();
+        pending?.();
+      };
+      this.currentObjectUrl = URL.createObjectURL(blob);
+      this.currentAudio = new Audio(this.currentObjectUrl);
+      this.currentAudio.onended = () => finish({ notifyEnd: true });
+      this.currentAudio.onerror = () => finish({ error: new Error('Audio playback failed') });
+      this.currentAudio.play().catch((error) => {
+        if (token === this.playbackToken) finish({ error });
+      });
+    });
+  }
+
   cleanupPlayback() {
     if (this.currentObjectUrl) {
       try {

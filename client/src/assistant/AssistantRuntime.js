@@ -783,7 +783,7 @@ class AssistantRuntime {
     let finalData = null;
     let replyText = '';
     let speechBuffer = '';
-    let speechQueue = [];
+    let speechQueue = [];           // pending prefetch promises (Promise<Blob>)
     let speechPlaying = false;
     let speechStarted = false;
     let speechPromise = Promise.resolve();
@@ -803,10 +803,17 @@ class AssistantRuntime {
 
         try {
           while (speechQueue.length > 0) {
-            const segment = speechQueue.shift();
+            const blobPromise = speechQueue.shift();
             this.transitionState(ASSISTANT_STATES.SPEAKING, { reason: 'assistant_stream_reply' });
-            await this.voiceOutput.speak(segment, { language: targetLanguage || this.sessionLanguage });
-            speechStarted = true;
+            try {
+              const blob = await blobPromise;
+              if (blob) {
+                await this.voiceOutput.playBlob(blob);
+                speechStarted = true;
+              }
+            } catch (error) {
+              this.logger?.('voice_output_segment_failed', { error: error?.message });
+            }
           }
           this.resetRecovery('tts');
         } finally {
@@ -829,7 +836,19 @@ class AssistantRuntime {
       if (!eligibleSegments.length) {
         return;
       }
-      speechQueue = [...speechQueue, ...eligibleSegments];
+      // Kick off the network fetch for each segment IMMEDIATELY in parallel.
+      // The playback loop will await each blob in order — so while sentence 1
+      // plays, sentences 2..N are already being synthesized server-side. This
+      // collapses the sentence-to-sentence gap to near zero.
+      for (const segment of eligibleSegments) {
+        const blobPromise = this.voiceOutput
+          .fetchSpeechBlob(segment, { language: targetLanguage || this.sessionLanguage })
+          .catch((error) => {
+            this.logger?.('voice_output_prefetch_failed', { error: error?.message });
+            return null;
+          });
+        speechQueue.push(blobPromise);
+      }
       startSpeechPlayback(targetLanguage);
     };
 
