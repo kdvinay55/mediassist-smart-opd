@@ -2,6 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const LabResult = require('../models/LabResult');
 const Appointment = require('../models/Appointment');
+const Consultation = require('../models/Consultation');
+const Medication = require('../models/Medication');
 const User = require('../models/User');
 const { auth, authorize } = require('../middleware/auth');
 const UnifiedAssistantService = require('../services/assistant/UnifiedAssistantService');
@@ -9,6 +11,12 @@ const { createNotification } = require('../services/simulationEngine');
 
 const router = express.Router();
 const assistantService = new UnifiedAssistantService();
+
+// Helper: notify lab room of any queue change so the portal updates instantly.
+function broadcastLabQueue(req, payload = {}) {
+  const io = req.app.get('io');
+  if (io) io.to('lab').emit('lab-queue-update', { at: Date.now(), ...payload });
+}
 
 // POST /api/lab/order — Doctor orders a single lab test (legacy, still works)
 router.post('/order', auth, authorize('doctor'), async (req, res) => {
@@ -76,6 +84,7 @@ router.post('/order-batch', auth, authorize('doctor'), async (req, res) => {
       io.to('lab').emit('new-order', { labs });
       io.to(`patient-${patientId}`).emit('lab-ordered', { labs, orderGroup });
     }
+    broadcastLabQueue(req, { reason: 'order-batch', orderGroup });
 
     res.status(201).json(labs);
   } catch (error) {
@@ -189,6 +198,7 @@ router.put('/accept-patient', auth, authorize('admin'), async (req, res) => {
 
     const io = req.app.get('io');
     if (io) io.to(`patient-${labs[0].patientId._id || labs[0].patientId}`).emit('lab-accepted', { orderGroup });
+    broadcastLabQueue(req, { reason: 'accept-patient', orderGroup });
 
     res.json({ labs, message: `Accepted ${labs.length} tests for ${labs[0].patientId.name}` });
   } catch (error) {
@@ -219,6 +229,7 @@ router.put('/collect-samples', auth, authorize('admin'), async (req, res) => {
 
     const io = req.app.get('io');
     if (io) io.to(`patient-${labs[0].patientId._id || labs[0].patientId}`).emit('lab-update', { orderGroup, status: 'sample-collected' });
+    broadcastLabQueue(req, { reason: 'collect-samples', orderGroup });
 
     res.json({ labs, message: `Collected ${labs.length} samples` });
   } catch (error) {
@@ -250,6 +261,7 @@ router.put('/:id/status', auth, async (req, res) => {
       }
       const io = req.app.get('io');
       if (io) io.to(`patient-${pid}`).emit('lab-update', { labId: lab._id, status });
+      broadcastLabQueue(req, { reason: 'status', labId: String(lab._id), status });
     }
 
     res.json(lab);
@@ -272,6 +284,7 @@ router.put('/:id/results', auth, authorize('doctor', 'admin'), async (req, res) 
 
     const io = req.app.get('io');
     if (io) io.to(`patient-${lab.patientId}`).emit('lab-results-ready', { lab });
+    broadcastLabQueue(req, { reason: 'results', labId: String(lab._id) });
 
     await createNotification(lab.patientId, 'lab-ready',
       'Lab Results Ready',
@@ -390,7 +403,7 @@ router.post('/request-followup', auth, authorize('patient'), async (req, res) =>
   }
 });
 
-// GET /api/lab/queue — Lab queue (grouped by orderGroup)
+// GET /api/lab/queue — Lab queue (grouped by orderGroup) + clinical context per patient
 router.get('/queue', auth, async (req, res) => {
   try {
     const today = new Date();
@@ -403,13 +416,33 @@ router.get('/queue', auth, async (req, res) => {
       status: { $ne: 'cancelled' },
       createdAt: { $gte: today, $lte: todayEnd }
     })
-      .populate('patientId', 'name')
-      .populate('orderedBy', 'name')
+      .populate('patientId', 'name age gender phone')
+      .populate('orderedBy', 'name specialization department')
       .sort({ createdAt: 1 });
+
+    // Pre-load consultation context + active meds in batch (single round-trip per type)
+    const consultationIds = [...new Set(labs.map(l => l.consultationId).filter(Boolean).map(String))];
+    const patientIds = [...new Set(labs.map(l => l.patientId?._id?.toString() || l.patientId?.toString()).filter(Boolean))];
+    const [consultations, activeMeds] = await Promise.all([
+      consultationIds.length
+        ? Consultation.find({ _id: { $in: consultationIds } }).select('chiefComplaint symptoms symptomDuration examination finalDiagnosis prescriptions treatmentPlan')
+        : [],
+      patientIds.length
+        ? Medication.find({ patientId: { $in: patientIds }, isActive: true }).select('patientId name dosage frequency duration instructions')
+        : []
+    ]);
+    const consultationById = new Map(consultations.map(c => [c._id.toString(), c]));
+    const medsByPatient = activeMeds.reduce((acc, m) => {
+      const k = m.patientId.toString();
+      (acc[k] = acc[k] || []).push(m);
+      return acc;
+    }, {});
 
     const groups = {};
     labs.forEach(lab => {
       const key = lab.orderGroup || lab._id.toString();
+      const patientKey = lab.patientId?._id?.toString() || lab.patientId?.toString();
+      const consultation = lab.consultationId ? consultationById.get(lab.consultationId.toString()) : null;
       if (!groups[key]) {
         groups[key] = {
           orderGroup: key,
@@ -420,9 +453,27 @@ router.get('/queue', auth, async (req, res) => {
           labQueuePosition: lab.labQueuePosition,
           labAccepted: lab.labAccepted,
           priority: lab.priority,
+          orderingNotes: lab.notes || null,
           createdAt: lab.createdAt,
           allSamplesCollected: true,
-          allCompleted: true
+          allCompleted: true,
+          // Clinical context so the lab tech understands WHY tests were ordered
+          clinicalContext: consultation ? {
+            chiefComplaint: consultation.chiefComplaint || null,
+            symptoms: consultation.symptoms || [],
+            symptomDuration: consultation.symptomDuration || null,
+            examination: consultation.examination || null,
+            diagnosis: (consultation.finalDiagnosis || []).map(d => d.condition).filter(Boolean),
+            treatmentPlan: consultation.treatmentPlan || null,
+            prescriptionsFromVisit: (consultation.prescriptions || []).map(p => ({
+              medication: p.medication, dosage: p.dosage, frequency: p.frequency,
+              duration: p.duration, instructions: p.instructions
+            }))
+          } : null,
+          activeMedications: (medsByPatient[patientKey] || []).map(m => ({
+            name: m.name, dosage: m.dosage, frequency: m.frequency,
+            duration: m.duration, instructions: m.instructions
+          }))
         };
       }
       groups[key].tests.push({
@@ -440,6 +491,7 @@ router.get('/queue', auth, async (req, res) => {
 
     res.json(Object.values(groups));
   } catch (error) {
+    console.error('Lab queue error:', error);
     res.status(500).json({ error: 'Failed to get lab queue' });
   }
 });

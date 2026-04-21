@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FlaskConical, Search, RefreshCw, Loader2, User, Clock,
   CheckCircle, AlertTriangle, ChevronDown, Beaker, FileText,
-  Sparkles, TestTubes, Droplets, Microscope, ArrowRight, Hash, UserCheck
+  Sparkles, TestTubes, Droplets, Microscope, ArrowRight, Hash, UserCheck,
+  Wifi, WifiOff, Stethoscope, Pill, ClipboardList
 } from 'lucide-react';
+import { io as socketIo } from 'socket.io-client';
 import api from '../lib/api';
 
 const statusConfig = {
@@ -30,8 +32,42 @@ export default function LabDashboard() {
   const [showResultModal, setShowResultModal] = useState(null);
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [interpreting, setInterpreting] = useState(null);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const debounceRef = useRef(null);
 
-  useEffect(() => { loadQueue(); const t = setInterval(loadQueue, 10000); return () => clearInterval(t); }, []);
+  // Real-time: keep a long-lived socket connection in the lab room and refresh
+  // the queue (debounced) whenever ANY lab event fires.
+  useEffect(() => {
+    loadQueue();
+    const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+    const socket = socketIo(apiBase || undefined, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      withCredentials: false,
+      reconnection: true
+    });
+    socket.on('connect', () => {
+      setLiveConnected(true);
+      socket.emit('join-room', 'lab');
+    });
+    socket.on('disconnect', () => setLiveConnected(false));
+    const refresh = (payload) => {
+      setLastUpdate(new Date());
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(loadQueue, 250);
+    };
+    socket.on('lab-queue-update', refresh);
+    socket.on('new-order', refresh);
+    socket.on('patient-accepted', refresh);
+    // Lightweight safety net: refresh every 30s in case sockets drop.
+    const fallback = setInterval(loadQueue, 30000);
+    return () => {
+      clearInterval(fallback);
+      clearTimeout(debounceRef.current);
+      socket.disconnect();
+    };
+  }, []);
 
   const loadQueue = async () => {
     try {
@@ -155,6 +191,22 @@ export default function LabDashboard() {
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
         </div>
+        {/* Live connection indicator */}
+        <div className="mt-3 flex items-center gap-3 text-xs text-teal-50/90">
+          {liveConnected ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/20 border border-emerald-300/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+              <Wifi className="w-3 h-3" /> Live tracking active
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/20 border border-amber-300/30">
+              <WifiOff className="w-3 h-3" /> Reconnecting…
+            </span>
+          )}
+          {lastUpdate && (
+            <span className="opacity-80">Last update: {lastUpdate.toLocaleTimeString()}</span>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -275,6 +327,76 @@ export default function LabDashboard() {
                           </span>
                         ))}
                       </div>
+
+                      {/* Clinical Context — symptoms, diagnosis, prescriptions so the lab tech understands WHY */}
+                      {(group.clinicalContext || group.activeMedications?.length > 0 || group.orderingNotes) && (
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {(group.clinicalContext?.chiefComplaint || group.clinicalContext?.symptoms?.length > 0) && (
+                            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 mb-1">
+                                <Stethoscope className="w-3 h-3" /> Symptoms / Reason
+                              </div>
+                              {group.clinicalContext?.chiefComplaint && (
+                                <p className="text-xs text-gray-800 leading-snug">{group.clinicalContext.chiefComplaint}</p>
+                              )}
+                              {group.clinicalContext?.symptoms?.length > 0 && (
+                                <p className="text-[11px] text-gray-600 mt-0.5">{group.clinicalContext.symptoms.join(', ')}</p>
+                              )}
+                              {group.clinicalContext?.symptomDuration && (
+                                <p className="text-[11px] text-gray-500 mt-0.5">Duration: {group.clinicalContext.symptomDuration}</p>
+                              )}
+                            </div>
+                          )}
+                          {group.clinicalContext?.diagnosis?.length > 0 && (
+                            <div className="rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 mb-1">
+                                <ClipboardList className="w-3 h-3" /> Working Diagnosis
+                              </div>
+                              <p className="text-xs text-gray-800 leading-snug">{group.clinicalContext.diagnosis.join('; ')}</p>
+                            </div>
+                          )}
+                          {group.orderingNotes && (
+                            <div className="rounded-lg border border-amber-100 bg-amber-50/40 px-3 py-2 md:col-span-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 mb-1">
+                                <FileText className="w-3 h-3" /> Doctor&apos;s Note for Lab
+                              </div>
+                              <p className="text-xs text-gray-800 leading-snug whitespace-pre-line">{group.orderingNotes}</p>
+                            </div>
+                          )}
+                          {group.activeMedications?.length > 0 && (
+                            <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2 md:col-span-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 mb-1">
+                                <Pill className="w-3 h-3" /> Patient&apos;s Current Medications ({group.activeMedications.length})
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {group.activeMedications.map((m, i) => (
+                                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-[11px] text-gray-800">
+                                    <span className="font-semibold">{m.name}</span>
+                                    <span className="text-gray-500">{m.dosage}</span>
+                                    <span className="text-gray-400">· {m.frequency}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {group.clinicalContext?.prescriptionsFromVisit?.length > 0 && (
+                            <div className="rounded-lg border border-violet-100 bg-violet-50/40 px-3 py-2 md:col-span-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-violet-700 mb-1">
+                                <Pill className="w-3 h-3" /> Prescriptions from this Visit
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {group.clinicalContext.prescriptionsFromVisit.map((p, i) => (
+                                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-violet-200 text-[11px] text-gray-800">
+                                    <span className="font-semibold">{p.medication}</span>
+                                    <span className="text-gray-500">{p.dosage}</span>
+                                    <span className="text-gray-400">· {p.frequency} · {p.duration}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Expand for details */}
                       {(group.labAccepted || group.allCompleted) && (
