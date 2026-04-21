@@ -1,0 +1,31 @@
+{
+  "name": "mediassist-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Production-grade Playwright E2E suite for MediAssist (SRM BioVault)",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:auth": "playwright test 01-auth",
+    "test:patient": "playwright test 02-patient",
+    "test:reception": "playwright test 03-reception",
+    "test:doctor": "playwright test 04-doctor",
+    "test:lab": "playwright test 05-lab",
+    "test:assistant": "playwright test 06-ai",
+    "test:ui-validation": "playwright test 07-ui",
+    "test:sync": "playwright test 08-sync",
+    "test:db": "playwright test 09-db",
+    "test:errors": "playwright test 10-errors",
+    "test:perf": "playwright test 11-perf",
+    "test:rbac": "playwright test 12-rbac",
+    "test:visual": "playwright test 13-visual",
+    "test:flow": "playwright test 14-end-to-end",
+    "report": "playwright show-report playwright-report",
+    "install:browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

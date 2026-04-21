@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Appointment = require('../models/Appointment');
 const Vitals = require('../models/Vitals');
 const User = require('../models/User');
@@ -75,10 +76,19 @@ router.post('/', auth, async (req, res) => {
   try {
     const { date, department, type, symptoms, reasonForVisit, doctorId, timeSlot } = req.body;
 
+    // Validate required fields up-front so malformed requests return a 400 instead of crashing mongoose.
+    if (!date || !department || !timeSlot) {
+      return res.status(400).json({ error: 'date, department and timeSlot are required' });
+    }
+    const parsedDate = new Date(date);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
     // Generate token number for the day
-    const startOfDay = new Date(date);
+    const startOfDay = new Date(parsedDate);
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
+    const endOfDay = new Date(parsedDate);
     endOfDay.setHours(23, 59, 59, 999);
 
     // Check if slot is still available
@@ -207,14 +217,20 @@ router.put('/:id/status', auth, async (req, res) => {
       .populate('patientId', 'name')
       .populate('doctorId', 'name specialization');
 
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
     const io = req.app.get('io');
     if (io) {
       io.to(`dept-${appointment.department}`).emit('queue-update', { appointment });
-      io.to(`patient-${appointment.patientId._id}`).emit('appointment-update', { appointment });
+      const patientRef = appointment.patientId?._id || appointment.patientId;
+      if (patientRef) io.to(`patient-${patientRef}`).emit('appointment-update', { appointment });
     }
 
     res.json(appointment);
   } catch (error) {
+    console.error('Update appointment status error:', error);
     res.status(500).json({ error: 'Failed to update appointment' });
   }
 });
@@ -305,6 +321,9 @@ router.get('/:id/patient-profile', auth, authorize('admin', 'doctor'), async (re
 // that specific doctor is assigned. Otherwise auto-assign least-loaded doctor in the department.
 router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid appointment id format' });
+    }
     const appointment = await Appointment.findById(req.params.id);
     if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
 
@@ -318,6 +337,10 @@ router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => 
     const requestedDoctorId = req.body?.doctorId;
 
     if (requestedDoctorId) {
+      // Validate the ObjectId format before hitting the DB to avoid CastError crashes
+      if (!mongoose.Types.ObjectId.isValid(requestedDoctorId)) {
+        return res.status(400).json({ error: 'Invalid doctor id format' });
+      }
       // Reception explicitly chose a doctor — verify they exist, are active, and serve this department.
       const requested = await User.findOne({ _id: requestedDoctorId, role: 'doctor', isActive: true });
       if (!requested) {

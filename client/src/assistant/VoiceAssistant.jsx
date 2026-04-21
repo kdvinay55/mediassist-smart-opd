@@ -101,6 +101,8 @@ export default function VoiceAssistant() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setOpen(true)}
+            aria-label="Open MediAssist voice assistant"
+            data-testid="assistant-fab"
             className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-xl shadow-blue-500/30"
           >
             <Mic className="h-6 w-6" />
@@ -181,10 +183,12 @@ export default function VoiceAssistant() {
                       onChange={(event) => setTextInput(event.target.value)}
                       placeholder={controlsDisabled ? 'Assistant unavailable' : 'Type a command'}
                       disabled={controlsDisabled}
+                      aria-label="Assistant text input"
+                      data-testid="assistant-input"
                       className="h-11 w-full bg-transparent text-sm text-gray-800 outline-none"
                     />
                   </div>
-                  <button type="submit" disabled={controlsDisabled} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-900 text-white disabled:opacity-50">
+                  <button type="submit" disabled={controlsDisabled} aria-label="Send assistant message" data-testid="assistant-send" className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-900 text-white disabled:opacity-50">
                     <Send className="h-4 w-4" />
                   </button>
                 </form>
