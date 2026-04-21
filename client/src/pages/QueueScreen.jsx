@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Hash, Clock, Users, RefreshCw, MapPin } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 
 export default function QueueScreen() {
   const { user } = useAuth();
@@ -33,7 +34,19 @@ export default function QueueScreen() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+
+  // Realtime queue refresh
+  useSocket({
+    patientId: user?.role === 'patient' ? user?._id : undefined,
+    department: user?.role === 'doctor' ? user?.department : undefined,
+    events: {
+      'queue-update': () => load(),
+      'doctor-assigned': () => load(),
+      'appointment-update': () => load(),
+      'workflow-update': () => load()
+    }
+  });
 
   return (
     <div className="space-y-6">

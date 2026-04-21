@@ -157,6 +157,21 @@ io.on('connection', (socket) => {
     if (patientId) socket.join(`patient-${patientId}`);
   });
 
+  // Any authenticated user can join their own user room to receive notification pushes
+  socket.on('join-user', (userId) => {
+    if (userId) socket.join(`user-${userId}`);
+  });
+
+  // Doctors/admins join a department room to receive queue updates instantly
+  socket.on('join-dept', (department) => {
+    if (department) socket.join(`dept-${department}`);
+  });
+
+  // Reception/admin queue room
+  socket.on('join-reception', () => {
+    socket.join('reception');
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });

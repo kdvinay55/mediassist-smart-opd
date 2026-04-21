@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDate, getStatusColor } from '../lib/utils';
 import { Calendar, Clock, Plus, X, Search, MapPin, Stethoscope, Navigation, Activity, FlaskConical, CheckCircle, AlertTriangle, Loader2, QrCode } from 'lucide-react';
@@ -81,6 +82,22 @@ export default function Appointments() {
   };
 
   useEffect(() => { fetchAppointments(); }, []);
+
+  // Realtime: refresh whenever appointment-related events fire
+  useSocket({
+    userId: user?._id,
+    patientId: user?.role === 'patient' ? user?._id : undefined,
+    department: user?.role === 'doctor' ? user?.department : undefined,
+    reception: user?.role === 'admin',
+    events: {
+      'queue-update': fetchAppointments,
+      'appointment-update': fetchAppointments,
+      'doctor-assigned': fetchAppointments,
+      'new-appointment': fetchAppointments,
+      'reception-queue-update': fetchAppointments,
+      'consultation-complete': fetchAppointments
+    }
+  });
 
   // Fetch available slots when date or department changes
   useEffect(() => {

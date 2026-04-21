@@ -9,6 +9,7 @@ import {
   Search, CheckCircle, MapPin, TrendingUp, TestTubes, Heart, FileText, Sparkles, Navigation, UserCheck
 } from 'lucide-react';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 import AssistantStatusIndicator from '../assistant/AssistantStatusIndicator';
 import VoiceAssistant from '../assistant/VoiceAssistant';
 
@@ -80,9 +81,18 @@ export default function AppLayout({ children }) {
       } catch { /* ignore */ }
     };
     fetchUnread();
-    const t = setInterval(fetchUnread, 30000);
+    // Fallback poll every 60s in case socket misses an event
+    const t = setInterval(fetchUnread, 60000);
     return () => clearInterval(t);
-  }, []);
+  }, [user?._id]);
+
+  // Real-time notification push: increment unread when server emits 'notification'
+  useSocket({
+    userId: user?._id,
+    events: {
+      notification: () => setUnreadCount(c => c + 1)
+    }
+  });
 
   const handleLogout = () => {
     logout();

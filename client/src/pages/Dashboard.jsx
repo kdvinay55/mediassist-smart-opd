@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 import { motion } from 'framer-motion';
 import { formatDate, getStatusColor } from '../lib/utils';
 import {
@@ -51,7 +52,27 @@ export default function Dashboard() {
       }
     };
     fetchData();
+    // expose fetcher so the socket handlers below can refresh on the fly
+    window.__refreshDashboard = fetchData;
+    return () => { delete window.__refreshDashboard; };
   }, [user]);
+
+  // Real-time updates: refresh dashboard when relevant events fire
+  useSocket({
+    userId: user?._id,
+    patientId: user?.role === 'patient' ? user?._id : undefined,
+    department: user?.role === 'doctor' ? user?.department : undefined,
+    events: {
+      'doctor-assigned': () => window.__refreshDashboard?.(),
+      'queue-update': () => window.__refreshDashboard?.(),
+      'appointment-update': () => window.__refreshDashboard?.(),
+      'consultation-complete': () => window.__refreshDashboard?.(),
+      'vitals-recorded': () => window.__refreshDashboard?.(),
+      'lab-update': () => window.__refreshDashboard?.(),
+      'lab-ordered': () => window.__refreshDashboard?.(),
+      'new-appointment': () => { if (user?.role === 'admin') window.__refreshDashboard?.(); }
+    }
+  });
 
   if (loading) {
     return (

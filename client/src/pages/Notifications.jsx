@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Check, CheckCheck, Trash2, Pill, FlaskConical, Calendar, AlertTriangle, Activity } from 'lucide-react';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
+import { useAuth } from '../context/AuthContext';
 
 const ICON_MAP = {
   'queue-update': Activity,
@@ -28,6 +30,7 @@ const COLOR_MAP = {
 };
 
 export default function Notifications() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -41,7 +44,20 @@ export default function Notifications() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+
+  // Realtime: prepend new notifications as they arrive
+  useSocket({
+    userId: user?._id,
+    events: {
+      notification: (payload) => {
+        const n = payload?.notification;
+        if (!n) return load();
+        setNotifications(prev => [n, ...prev.filter(x => x._id !== n._id)]);
+        if (!n.isRead) setUnread(c => c + 1);
+      }
+    }
+  });
 
   const markRead = async (id) => {
     try {

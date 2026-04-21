@@ -38,9 +38,11 @@ router.get('/stats', auth, authorize('admin'), async (req, res) => {
 // GET /api/admin/users
 router.get('/users', auth, authorize('admin'), async (req, res) => {
   try {
-    const { role, search } = req.query;
+    const { role, search, department, isActive } = req.query;
     const filter = {};
     if (role) filter.role = role;
+    if (department) filter.department = department;
+    if (isActive !== undefined) filter.isActive = isActive === 'true';
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },

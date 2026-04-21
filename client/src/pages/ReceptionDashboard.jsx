@@ -6,6 +6,7 @@ import {
   ChevronDown, Heart, Pill, FileText, Activity
 } from 'lucide-react';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 
 const statusColors = {
   'scheduled': 'bg-gray-100 text-gray-700',
@@ -27,8 +28,21 @@ export default function ReceptionDashboard() {
   const [expandedPatient, setExpandedPatient] = useState(null);
   const [patientProfile, setPatientProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [doctorsByDept, setDoctorsByDept] = useState({}); // { 'Cardiology': [{_id,name,specialization}] }
+  const [doctorChoice, setDoctorChoice] = useState({}); // { [appointmentId]: doctorId | '' }
+  const [showPicker, setShowPicker] = useState({}); // { [appointmentId]: boolean }
 
   useEffect(() => { loadAppointments(); }, []);
+
+  // Real-time refresh whenever a new appointment is booked or a patient is verified
+  useSocket({
+    reception: true,
+    events: {
+      'reception-queue-update': () => loadAppointments(),
+      'new-appointment': () => loadAppointments(),
+      'queue-update': () => loadAppointments()
+    }
+  });
 
   const loadAppointments = async () => {
     setLoading(true);
@@ -42,12 +56,32 @@ export default function ReceptionDashboard() {
     setLoading(false);
   };
 
+  const loadDoctorsForDept = async (department) => {
+    if (!department || doctorsByDept[department]) return;
+    try {
+      const { data } = await api.get(`/admin/users?role=doctor&department=${encodeURIComponent(department)}&isActive=true`);
+      setDoctorsByDept(prev => ({ ...prev, [department]: data || [] }));
+    } catch (err) {
+      console.error('Failed to load doctors for', department, err);
+      setDoctorsByDept(prev => ({ ...prev, [department]: [] }));
+    }
+  };
+
+  const togglePicker = (appointmentId, department) => {
+    const next = !showPicker[appointmentId];
+    setShowPicker(prev => ({ ...prev, [appointmentId]: next }));
+    if (next) loadDoctorsForDept(department);
+  };
+
   const verifyAndAssign = async (appointmentId) => {
     setVerifying(appointmentId);
     setVerifyResult(null);
     try {
-      const { data } = await api.post(`/appointments/${appointmentId}/verify-assign`);
-      setVerifyResult({ id: appointmentId, success: true, message: data.message, doctor: data.assignedDoctor, room: data.roomNumber });
+      const chosen = doctorChoice[appointmentId];
+      const body = chosen ? { doctorId: chosen } : {};
+      const { data } = await api.post(`/appointments/${appointmentId}/verify-assign`, body);
+      setVerifyResult({ id: appointmentId, success: true, message: data.message, doctor: data.assignedDoctor, room: data.roomNumber, mode: data.assignmentMode });
+      setShowPicker(prev => ({ ...prev, [appointmentId]: false }));
       await loadAppointments();
     } catch (err) {
       setVerifyResult({ id: appointmentId, success: false, message: err.response?.data?.error || 'Verification failed' });
@@ -437,20 +471,58 @@ export default function ReceptionDashboard() {
                   </AnimatePresence>
                 </div>
 
-                {/* Action button */}
+                {/* Action area */}
                 {apt.status === 'scheduled' && !apt.doctorId && (
-                  <button
-                    onClick={() => verifyAndAssign(apt._id)}
-                    disabled={verifying === apt._id}
-                    className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-medium text-sm shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 transition disabled:opacity-50"
-                  >
-                    {verifying === apt._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <UserCheck className="w-4 h-4" />
-                    )}
-                    Verify & Assign
-                  </button>
+                  <div className="shrink-0 flex flex-col items-end gap-2 min-w-[180px]">
+                    <button
+                      onClick={() => togglePicker(apt._id, apt.department)}
+                      className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                    >
+                      <Stethoscope className="w-3.5 h-3.5" />
+                      {showPicker[apt._id] ? 'Hide doctor picker' : 'Choose doctor (optional)'}
+                      <ChevronDown className={`w-3 h-3 transition ${showPicker[apt._id] ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    <AnimatePresence>
+                      {showPicker[apt._id] && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="w-full overflow-hidden"
+                        >
+                          <select
+                            value={doctorChoice[apt._id] || ''}
+                            onChange={e => setDoctorChoice(prev => ({ ...prev, [apt._id]: e.target.value }))}
+                            className="input-field text-xs py-1.5 w-full"
+                          >
+                            <option value="">Auto-assign (least busy)</option>
+                            {(doctorsByDept[apt.department] || []).map(doc => (
+                              <option key={doc._id} value={doc._id}>
+                                Dr. {doc.name}{doc.specialization ? ` — ${doc.specialization}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          {doctorsByDept[apt.department] && doctorsByDept[apt.department].length === 0 && (
+                            <p className="text-[10px] text-gray-400 mt-1">No doctors found in {apt.department}</p>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <button
+                      onClick={() => verifyAndAssign(apt._id)}
+                      disabled={verifying === apt._id}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-medium text-sm shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 transition disabled:opacity-50"
+                    >
+                      {verifying === apt._id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <UserCheck className="w-4 h-4" />
+                      )}
+                      Verify & Assign
+                    </button>
+                  </div>
                 )}
                 {apt.status === 'scheduled' && apt.doctorId && (
                   <span className="shrink-0 px-3 py-1.5 bg-green-100 text-green-700 rounded-xl text-xs font-medium flex items-center gap-1">

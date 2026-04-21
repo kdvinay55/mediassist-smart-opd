@@ -1,26 +1,37 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
+import useSocket from '../lib/useSocket';
 import { motion } from 'framer-motion';
 import { Pill, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function Medications() {
+  const { user } = useAuth();
   const [medications, setMedications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Medications come from consultations - fetch patient history
-    const fetch = async () => {
-      try {
-        const res = await api.get('/patients/dashboard');
-        setMedications(res.data.activeMedications || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, []);
+  const fetchMeds = async () => {
+    try {
+      const res = await api.get('/patients/dashboard');
+      setMedications(res.data.activeMedications || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchMeds(); }, []);
+
+  // Refresh meds the moment a consultation completes (new prescription) or notification fires
+  useSocket({
+    patientId: user?._id,
+    userId: user?._id,
+    events: {
+      'consultation-complete': fetchMeds,
+      'notification': fetchMeds
+    }
+  });
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-3 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" /></div>;
 

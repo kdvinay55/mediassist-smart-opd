@@ -236,7 +236,16 @@ async function scheduleFollowUp(consultationId) {
 
 // --- Notification Helper ---
 async function createNotification(userId, type, title, message, relatedId, relatedModel) {
-  return Notification.create({ userId, type, title, message, relatedId, relatedModel });
+  const notification = await Notification.create({ userId, type, title, message, relatedId, relatedModel });
+  // Emit real-time push so the client bell + Notifications page update without polling
+  if (io && userId) {
+    try {
+      io.to(`user-${userId}`).emit('notification', { notification });
+    } catch (e) {
+      console.warn('notification emit failed', e?.message);
+    }
+  }
+  return notification;
 }
 
 // --- OPD Traffic ---

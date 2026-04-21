@@ -128,6 +128,7 @@ router.post('/', auth, async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`dept-${department}`).emit('queue-update', { appointment });
+      io.to('reception').emit('reception-queue-update', { type: 'new', appointment });
       io.emit('new-appointment', { appointment });
     }
 
@@ -299,38 +300,57 @@ router.get('/:id/patient-profile', auth, authorize('admin', 'doctor'), async (re
   }
 });
 
-// POST /api/appointments/:id/verify-assign — Admin verifies patient identity + auto-assigns doctor
+// POST /api/appointments/:id/verify-assign — Admin verifies patient identity + assigns doctor
+// Optional body: { doctorId } — if provided AND doctor is in the appointment's department,
+// that specific doctor is assigned. Otherwise auto-assign least-loaded doctor in the department.
 router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => {
   try {
     const appointment = await Appointment.findById(req.params.id);
     if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
 
-    // Find available doctor in the department
     const department = appointment.department;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayEnd = new Date(today);
     todayEnd.setHours(23, 59, 59, 999);
 
-    // Get all doctors in this department
-    const doctors = await User.find({ role: 'doctor', department, isActive: true });
-    if (doctors.length === 0) {
-      return res.status(400).json({ error: `No doctors available in ${department}` });
+    let bestDoctor = null;
+    const requestedDoctorId = req.body?.doctorId;
+
+    if (requestedDoctorId) {
+      // Reception explicitly chose a doctor — verify they exist, are active, and serve this department.
+      const requested = await User.findOne({ _id: requestedDoctorId, role: 'doctor', isActive: true });
+      if (!requested) {
+        return res.status(400).json({ error: 'Selected doctor not found or inactive' });
+      }
+      if (requested.department && requested.department !== department) {
+        return res.status(400).json({
+          error: `Dr. ${requested.name} is in ${requested.department}, but this appointment is for ${department}. Please pick a doctor from ${department} or let the system auto-assign.`
+        });
+      }
+      bestDoctor = requested;
+    } else {
+      // Auto-assign: least-loaded doctor in this department today.
+      const doctors = await User.find({ role: 'doctor', department, isActive: true });
+      if (doctors.length === 0) {
+        return res.status(400).json({ error: `No doctors available in ${department}` });
+      }
+      let minCount = Infinity;
+      for (const doc of doctors) {
+        const count = await Appointment.countDocuments({
+          doctorId: doc._id,
+          date: { $gte: today, $lte: todayEnd },
+          status: { $nin: ['cancelled', 'no-show'] }
+        });
+        if (count < minCount) {
+          minCount = count;
+          bestDoctor = doc;
+        }
+      }
     }
 
-    // Find the doctor with fewest appointments today (load balancing)
-    let bestDoctor = null;
-    let minCount = Infinity;
-    for (const doc of doctors) {
-      const count = await Appointment.countDocuments({
-        doctorId: doc._id,
-        date: { $gte: today, $lte: todayEnd },
-        status: { $nin: ['cancelled', 'no-show'] }
-      });
-      if (count < minCount) {
-        minCount = count;
-        bestDoctor = doc;
-      }
+    if (!bestDoctor) {
+      return res.status(400).json({ error: `No doctors available in ${department}` });
     }
 
     // Assign doctor and update status
@@ -339,6 +359,8 @@ router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => 
     appointment.status = 'checked-in';
     appointment.checkedInAt = new Date();
     await appointment.save();
+
+    const assignmentMode = requestedDoctorId ? 'manual' : 'auto';
 
     // Create/update workflow state
     let workflow = await WorkflowState.findOne({ appointmentId: appointment._id });
@@ -350,12 +372,12 @@ router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => 
         roomNumber,
         stateHistory: [
           { state: 'REGISTERED', enteredAt: appointment.createdAt },
-          { state: 'QUEUED', enteredAt: new Date(), metadata: { doctorAssigned: bestDoctor.name, roomNumber, verifiedBy: req.user.name } }
+          { state: 'QUEUED', enteredAt: new Date(), metadata: { doctorAssigned: bestDoctor.name, roomNumber, verifiedBy: req.user.name, assignmentMode } }
         ]
       });
     } else {
       workflow.roomNumber = roomNumber;
-      workflow.stateHistory.push({ state: 'QUEUED', enteredAt: new Date(), metadata: { doctorAssigned: bestDoctor.name, roomNumber, verifiedBy: req.user.name } });
+      workflow.stateHistory.push({ state: 'QUEUED', enteredAt: new Date(), metadata: { doctorAssigned: bestDoctor.name, roomNumber, verifiedBy: req.user.name, assignmentMode } });
       if (workflow.currentState === 'REGISTERED') workflow.currentState = 'QUEUED';
       await workflow.save();
     }
@@ -373,6 +395,11 @@ router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => 
         doctor: { name: bestDoctor.name, specialization: bestDoctor.specialization, department },
         roomNumber
       });
+      // Doctor's queue updates instantly when a patient is assigned
+      io.to(`dept-${department}`).emit('queue-update', { appointment, type: 'verify-assign' });
+      io.to(`user-${bestDoctor._id}`).emit('queue-update', { appointment, type: 'verify-assign' });
+      // Reception list refreshes
+      io.to('reception').emit('reception-queue-update', { type: 'verify-assign', appointment });
     }
 
     const populated = await Appointment.findById(appointment._id)
@@ -381,9 +408,12 @@ router.post('/:id/verify-assign', auth, authorize('admin'), async (req, res) => 
 
     res.json({
       appointment: populated,
-      assignedDoctor: { name: bestDoctor.name, specialization: bestDoctor.specialization, department },
+      assignedDoctor: { _id: bestDoctor._id, name: bestDoctor.name, specialization: bestDoctor.specialization, department },
       roomNumber,
-      message: `Patient verified and assigned to Dr. ${bestDoctor.name}, Room ${roomNumber}`
+      assignmentMode,
+      message: assignmentMode === 'manual'
+        ? `Patient verified and manually assigned to Dr. ${bestDoctor.name}, Room ${roomNumber}`
+        : `Patient verified and auto-assigned to Dr. ${bestDoctor.name}, Room ${roomNumber}`
     });
   } catch (error) {
     console.error('Verify-assign error:', error);
