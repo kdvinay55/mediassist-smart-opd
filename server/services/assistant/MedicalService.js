@@ -13,7 +13,7 @@ function buildCompletionConfig(model, temperature, maxTokens) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))
-      ? { reasoning_effort: 'medium' }
+      ? { reasoning_effort: 'low' }
       : { temperature })
   };
 }
@@ -34,7 +34,7 @@ class MedicalService {
       ? new OpenAI({
           apiKey: apiKey || process.env.OPENAI_API_KEY,
           httpAgent: MedicalService._keepAliveAgent,
-          timeout: 25000,
+          timeout: 60000,
           maxRetries: 1
         })
       : null;
