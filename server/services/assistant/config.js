@@ -1,10 +1,12 @@
 const ASSISTANT_MODELS = Object.freeze({
   wakeWord: 'vosk',
+  // Best transcription model for multilingual + Indic scripts.
   speechRecognition: process.env.OPENAI_MODEL_STT || 'gpt-4o-transcribe',
-  // gpt-4o-mini is far faster than gpt-5 for intent classification + chat
-  // (sub-2s vs 20+s with gpt-5 reasoning), with equal accuracy for these tasks.
+  // Intent classification: gpt-4o-mini is the right tool — fast (~300ms) + accurate.
   assistantLogic: process.env.OPENAI_MODEL_ASSISTANT || process.env.OPENAI_MODEL_NORMAL || 'gpt-4o-mini',
-  medicalReasoning: process.env.OPENAI_MODEL_MEDICAL || 'gpt-4o-mini',
+  // Medical reasoning: full gpt-4o for clinical accuracy. Slightly slower but correct.
+  medicalReasoning: process.env.OPENAI_MODEL_MEDICAL || 'gpt-4o',
+  // Lowest-latency multilingual TTS available today.
   voiceOutput: process.env.OPENAI_MODEL_TTS || 'gpt-4o-mini-tts'
 });
 

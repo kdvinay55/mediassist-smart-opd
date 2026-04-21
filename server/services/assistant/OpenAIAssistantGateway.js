@@ -94,8 +94,23 @@ function scoreLanguageConfidence({ text, detectedLanguage, languageHint }) {
 class OpenAIAssistantGateway {
   constructor({ apiKey, logger } = {}) {
     this.logger = logger;
+    // Reuse a keep-alive HTTPS agent so OpenAI calls share TCP/TLS connections
+    // (saves ~150-300ms per request after the first one).
+    if (!OpenAIAssistantGateway._keepAliveAgent) {
+      const https = require('https');
+      OpenAIAssistantGateway._keepAliveAgent = new https.Agent({
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+        maxSockets: 50
+      });
+    }
     this.client = apiKey || process.env.OPENAI_API_KEY
-      ? new OpenAI({ apiKey: apiKey || process.env.OPENAI_API_KEY })
+      ? new OpenAI({
+          apiKey: apiKey || process.env.OPENAI_API_KEY,
+          httpAgent: OpenAIAssistantGateway._keepAliveAgent,
+          timeout: 25000,
+          maxRetries: 1
+        })
       : null;
     this.assistantModel = ASSISTANT_MODELS.assistantLogic;
     this.transcriptionModel = ASSISTANT_MODELS.speechRecognition;

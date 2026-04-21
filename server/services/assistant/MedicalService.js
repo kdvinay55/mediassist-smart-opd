@@ -22,8 +22,21 @@ class MedicalService {
   constructor({ apiKey, logger } = {}) {
     this.logger = logger;
     this.model = ASSISTANT_MODELS.medicalReasoning;
+    if (!MedicalService._keepAliveAgent) {
+      const https = require('https');
+      MedicalService._keepAliveAgent = new https.Agent({
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+        maxSockets: 50
+      });
+    }
     this.client = apiKey || process.env.OPENAI_API_KEY
-      ? new OpenAI({ apiKey: apiKey || process.env.OPENAI_API_KEY })
+      ? new OpenAI({
+          apiKey: apiKey || process.env.OPENAI_API_KEY,
+          httpAgent: MedicalService._keepAliveAgent,
+          timeout: 25000,
+          maxRetries: 1
+        })
       : null;
   }
 
@@ -42,7 +55,7 @@ Guidelines:
 - NEVER just say \"please consult a doctor\" without giving any useful information first`;
   }
 
-  async complete(userPrompt, { language = 'English', maxTokens = 450 } = {}) {
+  async complete(userPrompt, { language = 'English', maxTokens = 600 } = {}) {
     if (!this.client) {
       this.logger?.('medical_response_unavailable', { reason: 'missing_api_key' });
       return FALLBACK_MESSAGE;
@@ -66,7 +79,7 @@ Guidelines:
     }
   }
 
-  async *streamComplete(userPrompt, { language = 'English', maxTokens = 450 } = {}) {
+  async *streamComplete(userPrompt, { language = 'English', maxTokens = 600 } = {}) {
     if (!this.client) {
       yield FALLBACK_MESSAGE;
       return;

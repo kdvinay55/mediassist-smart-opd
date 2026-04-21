@@ -292,15 +292,7 @@ class IntentService {
     const input = String(text || '').trim();
     this.logger?.('intent_detect_requested', { model: this.model, chars: input.length });
 
-    // RULE-FIRST: skip AI round-trip when the rule matcher is confident (>=0.9).
-    // Rules cover ~95% of patient commands (book/cancel/show/navigate/vitals)
-    // and run in sub-millisecond time, eliminating the LLM round-trip entirely.
-    const ruleResult = ruleBasedIntent(input);
-    if (ruleResult.intent !== 'GENERAL_CHAT' && ruleResult.confidence >= 0.9) {
-      return ruleResult;
-    }
-
-    // Fall back to AI only for ambiguous / general-chat / low-confidence inputs.
+    // AI-only classification (rule-based fallback used solely if OpenAI is unreachable).
     if (this.openai) {
       try {
         const result = await this.aiDetectIntent(input);
@@ -316,8 +308,8 @@ class IntentService {
       }
     }
 
-    // Fallback: rule-based when OpenAI is unavailable
-    return ruleResult;
+    // Final fallback: rule-based engine (only when OpenAI itself errors out).
+    return ruleBasedIntent(input);
   }
 
   async aiDetectIntent(text) {
