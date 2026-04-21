@@ -8,29 +8,72 @@ const Patient = require('../../models/Patient');
 const { generateQrToken } = require('../qr');
 const { ASSISTANT_MODELS } = require('./config');
 
-const BOOKABLE_SLOTS = ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM'];
+// All slot times are in IST. Server may run in UTC (e.g. Render).
+const BOOKABLE_SLOTS = [
+  '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+  '12:00 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM',
+  '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM', '06:30 PM', '07:00 PM'
+];
+
+// IST helpers — the user's wall-clock is always IST regardless of server timezone.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+function nowIST() {
+  return new Date(Date.now() + IST_OFFSET_MS);
+}
+function toIST(date) {
+  return new Date(date.getTime() + IST_OFFSET_MS);
+}
+function istDateString(date) {
+  return toIST(date).toISOString().split('T')[0];
+}
+
+function parseTimeToSlot(text) {
+  // Accept "6 pm", "6:30 pm", "18:00", "6" (with PM context), Hindi/Telugu hour words optional.
+  const lower = String(text || '').toLowerCase();
+  const m = lower.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\b/);
+  if (m) {
+    let h = parseInt(m[1], 10);
+    const mm = m[2] ? parseInt(m[2], 10) : 0;
+    const period = m[3].startsWith('a') ? 'AM' : 'PM';
+    if (h < 1 || h > 12) return null;
+    const mmRounded = mm < 15 ? '00' : (mm < 45 ? '30' : '00');
+    if (mm >= 45) h = h === 12 ? 1 : h + 1;
+    return `${String(h).padStart(2, '0')}:${mmRounded} ${period}`;
+  }
+  const m24 = lower.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (m24) {
+    let h = parseInt(m24[1], 10);
+    const mm = parseInt(m24[2], 10);
+    const period = h >= 12 ? 'PM' : 'AM';
+    let h12 = h % 12; if (h12 === 0) h12 = 12;
+    const mmRounded = mm < 15 ? '00' : (mm < 45 ? '30' : '00');
+    return `${String(h12).padStart(2, '0')}:${mmRounded} ${period}`;
+  }
+  return null;
+}
 
 function formatDateForSpeech(dateInput) {
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat('en-IN', {
     month: 'long',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata'
   }).format(date);
 }
 
 function extractBookingEntities(text) {
   const lower = text.toLowerCase();
   const entities = {};
-  const now = new Date();
+  const now = nowIST();
 
   if (/\bday after tomorrow\b/.test(lower)) {
-    entities.date = new Date(now.getTime() + 2 * 86400000).toISOString();
+    entities.date = new Date(now.getTime() + 2 * 86400000 - IST_OFFSET_MS).toISOString();
   } else if (/\btomorrow\b/.test(lower)) {
-    entities.date = new Date(now.getTime() + 86400000).toISOString();
+    entities.date = new Date(now.getTime() + 86400000 - IST_OFFSET_MS).toISOString();
   } else if (/\b(today|right now|now|immediately|urgent|emergency|abhi|ippudu|ippo)\b/.test(lower)) {
-    entities.date = now.toISOString();
+    entities.date = new Date(now.getTime() - IST_OFFSET_MS).toISOString();
   } else {
     const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
     const dayMatch = lower.match(/(?:on\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:\s+(?:of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december))?/i);
@@ -42,15 +85,19 @@ function extractBookingEntities(text) {
       const month = monthStr ? monthNames.indexOf(monthStr.toLowerCase()) : now.getMonth();
       const candidate = new Date(now.getFullYear(), month, day);
       if (candidate < now) candidate.setFullYear(now.getFullYear() + 1);
-      entities.date = candidate.toISOString();
+      entities.date = new Date(candidate.getTime() - IST_OFFSET_MS).toISOString();
     } else if (monthFirst) {
       const month = monthNames.indexOf(monthFirst[1].toLowerCase());
       const day = parseInt(monthFirst[2], 10);
       const candidate = new Date(now.getFullYear(), month, day);
       if (candidate < now) candidate.setFullYear(now.getFullYear() + 1);
-      entities.date = candidate.toISOString();
+      entities.date = new Date(candidate.getTime() - IST_OFFSET_MS).toISOString();
     }
   }
+
+  // Extract requested time-of-day (e.g. "6 pm", "3:30 pm", "18:00").
+  const timeSlot = parseTimeToSlot(lower);
+  if (timeSlot) entities.timeSlot = timeSlot;
 
   const deptMap = [
     [/\bemergency\b/, 'Emergency'],
@@ -129,8 +176,8 @@ function ruleBasedIntent(text) {
     return { intent: 'BOOK_APPOINTMENT', entities: extractBookingEntities(text), confidence: 0.95 };
   }
 
-  if (/\b(cancel|remove|delete)\b.*\bappointment\b/.test(lower) || /\bappointment\b.*\b(cancel|remove|delete)\b/.test(lower)) {
-    const cancelAll = /\b(all|sab|anni|ellam|ella|ellaam)\b/.test(lower);
+  if (/\b(cancel|remove|delete|drop)\b/.test(lower) && /\bappointment/.test(lower)) {
+    const cancelAll = /\b(all|every|recent|sab|saare|anni|ellam|ella|ellaam)\b/.test(lower);
     return { intent: 'CANCEL_APPOINTMENT', entities: { cancelAll }, confidence: 0.95 };
   }
 
@@ -182,10 +229,14 @@ function ruleBasedIntent(text) {
 }
 
 async function pickAvailableSlot(date, department, requested) {
-  const startOfDay = new Date(date);
-  const endOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-  endOfDay.setHours(23, 59, 59, 999);
+  // date is a UTC instant; we need the IST calendar day it falls on.
+  const istDate = toIST(date);
+  const istYear = istDate.getUTCFullYear();
+  const istMonth = istDate.getUTCMonth();
+  const istDay = istDate.getUTCDate();
+  // Day boundaries in IST converted back to UTC for the DB query.
+  const startOfDay = new Date(Date.UTC(istYear, istMonth, istDay, 0, 0, 0) - IST_OFFSET_MS);
+  const endOfDay = new Date(Date.UTC(istYear, istMonth, istDay, 23, 59, 59) - IST_OFFSET_MS);
 
   const booked = await Appointment.find({
     department,
@@ -193,8 +244,8 @@ async function pickAvailableSlot(date, department, requested) {
     status: { $nin: ['cancelled', 'no-show'] }
   }).select('timeSlot').lean();
 
-  const now = new Date();
-  const isToday = startOfDay.toDateString() === now.toDateString();
+  const nowIst = nowIST();
+  const isToday = istDateString(date) === istDateString(new Date());
 
   const isFutureSlot = (slot) => {
     if (!isToday) return true;
@@ -202,8 +253,10 @@ async function pickAvailableSlot(date, department, requested) {
     let [h, m] = time.split(':').map(Number);
     if (period === 'PM' && h !== 12) h += 12;
     if (period === 'AM' && h === 12) h = 0;
-    if (h < now.getHours()) return false;
-    if (h === now.getHours() && m <= now.getMinutes() + 15) return false;
+    const istHour = nowIst.getUTCHours();
+    const istMin = nowIst.getUTCMinutes();
+    if (h < istHour) return false;
+    if (h === istHour && m <= istMin + 15) return false;
     return true;
   };
 
@@ -275,8 +328,8 @@ Classify the user message into exactly ONE intent and extract relevant entities.
 Valid intents: ${validIntents.join(', ')}
 
 Entity extraction rules:
-- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (HH:MM AM/PM). If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
-- CANCEL_APPOINTMENT: extract "cancelAll" (boolean true if user says "all"/"sab"/"anni"/"ellam" or implies all), "appointmentId" (if cancelling a specific one)
+- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (formatted as "HH:MM AM" or "HH:MM PM" — e.g. "06:00 PM" for 6 PM, "09:30 AM" for 9:30 AM). Times are IST. If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
+- CANCEL_APPOINTMENT: ALWAYS use this intent (never NAVIGATE) when the user mentions cancel/remove/delete/drop along with appointment(s). Extract "cancelAll" (boolean true if user says "all"/"recent"/"sab"/"anni"/"ellam" or implies multiple), "appointmentId" (if cancelling a specific one). "cancel my recent appointments" → CANCEL_APPOINTMENT with cancelAll=true.
 - SHOW_APPOINTMENTS, SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
 - ENTER_VITALS: extract "temperature", "bloodPressure" (as "systolic/diastolic"), "heartRate", "oxygenSaturation"
 - EDIT_PATIENT: extract "field" (one of: name, phone, email, address, bloodGroup, allergies, emergencyContact, dateOfBirth, gender, chronicConditions), "newValue"
@@ -337,15 +390,14 @@ Do not include any other text.`
     const date = entities.date ? new Date(entities.date) : new Date();
     if (Number.isNaN(date.getTime())) date.setTime(Date.now());
     const department = entities.department || 'General Medicine';
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+    const isToday = istDateString(date) === istDateString(new Date());
 
     let timeSlot = await pickAvailableSlot(date, department, entities.timeSlot);
     let bookedDate = date;
 
     // If today is fully booked or it's already late in the day, roll to tomorrow automatically.
     if (!timeSlot && isToday) {
-      const tomorrow = new Date(now.getTime() + 86400000);
+      const tomorrow = new Date(Date.now() + 86400000);
       timeSlot = await pickAvailableSlot(tomorrow, department, entities.timeSlot);
       if (timeSlot) {
         bookedDate = tomorrow;
@@ -369,9 +421,9 @@ Do not include any other text.`
       qrToken: generateQrToken()
     });
 
-    const dateLabel = bookedDate.toDateString() === now.toDateString()
+    const dateLabel = istDateString(bookedDate) === istDateString(new Date())
       ? 'today'
-      : bookedDate.toDateString() === new Date(now.getTime() + 86400000).toDateString()
+      : istDateString(bookedDate) === istDateString(new Date(Date.now() + 86400000))
         ? 'tomorrow'
         : formatDateForSpeech(bookedDate);
 

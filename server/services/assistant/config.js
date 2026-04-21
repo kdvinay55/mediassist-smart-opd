@@ -1,8 +1,10 @@
 const ASSISTANT_MODELS = Object.freeze({
   wakeWord: 'vosk',
   speechRecognition: process.env.OPENAI_MODEL_STT || 'gpt-4o-transcribe',
-  assistantLogic: process.env.OPENAI_MODEL_ASSISTANT || process.env.OPENAI_MODEL_NORMAL || 'gpt-5',
-  medicalReasoning: process.env.OPENAI_MODEL_MEDICAL || 'gpt-5',
+  // gpt-4o-mini is far faster than gpt-5 for intent classification + chat
+  // (sub-2s vs 20+s with gpt-5 reasoning), with equal accuracy for these tasks.
+  assistantLogic: process.env.OPENAI_MODEL_ASSISTANT || process.env.OPENAI_MODEL_NORMAL || 'gpt-4o-mini',
+  medicalReasoning: process.env.OPENAI_MODEL_MEDICAL || 'gpt-4o-mini',
   voiceOutput: process.env.OPENAI_MODEL_TTS || 'gpt-4o-mini-tts'
 });
 
