@@ -21,7 +21,7 @@ import {
 const GREETING = 'Hi, how can I help you?';
 const FALLBACK_MESSAGE = "I'm sorry, I didn't understand. Please try again.";
 const MAX_HISTORY = 10;
-const RECORDING_TIMEOUT_MS = 7000;
+const RECORDING_TIMEOUT_MS = 12000;
 const LANGUAGE_SCRIPTS = Object.freeze({
   te: /[\u0C00-\u0C7F]/,
   hi: /[\u0900-\u097F]/,
@@ -193,6 +193,11 @@ class AssistantRuntime {
     this.speechRecognition = new SpeechRecognitionService({
       apiClient: api,
       onError: (error) => this.handleError(error, { speakFallback: false }),
+      onSilenceDetected: () => {
+        if (this.getState() === ASSISTANT_STATES.LISTENING) {
+          void this.finishListening();
+        }
+      },
       logger: this.log.bind(this),
       telemetry: this.telemetry,
       demoMode: ASSISTANT_DEMO_MODE

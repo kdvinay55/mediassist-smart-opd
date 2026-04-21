@@ -62,7 +62,7 @@ function buildTokenParams(model, maxTokens) {
     : { max_tokens: maxTokens };
 }
 
-function buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort = 'minimal' } = {}) {
+function buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort = 'medium' } = {}) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))

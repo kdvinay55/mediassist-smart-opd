@@ -13,7 +13,7 @@ function buildCompletionConfig(model, temperature, maxTokens) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))
-      ? { reasoning_effort: 'low' }
+      ? { reasoning_effort: 'medium' }
       : { temperature })
   };
 }

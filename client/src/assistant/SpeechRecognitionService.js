@@ -17,11 +17,18 @@ function isMicrophoneBusyError(error) {
   return ['AbortError', 'NotReadableError', 'TrackStartError'].includes(error?.name);
 }
 
+// Voice Activity Detection thresholds
+const VAD_RMS_THRESHOLD = 0.018;     // ~speech vs background noise
+const VAD_SILENCE_HANGOVER_MS = 800;  // stop 800ms after speech ends
+const VAD_MIN_SPEECH_MS = 400;        // ignore short clicks
+const VAD_POLL_MS = 80;
+
 export default class SpeechRecognitionService {
-  constructor({ apiClient, onTranscription, onError, logger, telemetry, demoMode = ASSISTANT_DEMO_MODE } = {}) {
+  constructor({ apiClient, onTranscription, onError, onSilenceDetected, logger, telemetry, demoMode = ASSISTANT_DEMO_MODE } = {}) {
     this.apiClient = apiClient;
     this.onTranscription = onTranscription;
     this.onError = onError;
+    this.onSilenceDetected = onSilenceDetected;
     this.logger = logger;
     this.telemetry = telemetry;
     this.demoMode = demoMode;
@@ -42,6 +49,67 @@ export default class SpeechRecognitionService {
     this.browserTranscriptionPromise = null;
     this.resolveBrowserTranscription = null;
     this.browserTranscriptionSpan = null;
+
+    // VAD state
+    this.audioContext = null;
+    this.analyser = null;
+    this.vadSourceNode = null;
+    this.vadInterval = null;
+    this.vadStartedAt = 0;
+    this.vadLastSpeechAt = 0;
+    this.vadSpeechDetected = false;
+  }
+
+  startSilenceDetection() {
+    if (typeof window === 'undefined' || !this.audioStream) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    try {
+      this.audioContext = new Ctx();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 1024;
+      this.vadSourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
+      this.vadSourceNode.connect(this.analyser);
+      const buf = new Float32Array(this.analyser.fftSize);
+      this.vadStartedAt = Date.now();
+      this.vadLastSpeechAt = 0;
+      this.vadSpeechDetected = false;
+      this.vadInterval = window.setInterval(() => {
+        if (!this.analyser) return;
+        this.analyser.getFloatTimeDomainData(buf);
+        let sumSq = 0;
+        for (let i = 0; i < buf.length; i++) sumSq += buf[i] * buf[i];
+        const rms = Math.sqrt(sumSq / buf.length);
+        const now = Date.now();
+        if (rms > VAD_RMS_THRESHOLD) {
+          this.vadLastSpeechAt = now;
+          this.vadSpeechDetected = true;
+        }
+        if (this.vadSpeechDetected
+          && (now - this.vadLastSpeechAt) > VAD_SILENCE_HANGOVER_MS
+          && (this.vadLastSpeechAt - this.vadStartedAt) > VAD_MIN_SPEECH_MS) {
+          this.stopSilenceDetection();
+          this.logger?.('vad_silence_detected', { speechMs: this.vadLastSpeechAt - this.vadStartedAt });
+          this.onSilenceDetected?.();
+        }
+      }, VAD_POLL_MS);
+    } catch (error) {
+      this.logger?.('vad_init_failed', { error: error.message });
+    }
+  }
+
+  stopSilenceDetection() {
+    if (this.vadInterval) {
+      clearInterval(this.vadInterval);
+      this.vadInterval = null;
+    }
+    try { this.vadSourceNode?.disconnect(); } catch {}
+    try { this.analyser?.disconnect(); } catch {}
+    try { this.audioContext?.close(); } catch {}
+    this.vadSourceNode = null;
+    this.analyser = null;
+    this.audioContext = null;
+    this.vadSpeechDetected = false;
   }
 
   getSupportedLanguages() {
@@ -194,6 +262,7 @@ export default class SpeechRecognitionService {
 
       this.mediaRecorder.start(200);
       this.recording = true;
+      this.startSilenceDetection();
       this.logger?.('speech_recording_start', { engine: this.engine });
       return true;
     } catch (error) {
@@ -398,6 +467,7 @@ export default class SpeechRecognitionService {
   }
 
   releaseMedia() {
+    this.stopSilenceDetection();
     if (this.audioStream) {
       this.audioStream.getTracks().forEach((track) => track.stop());
     }

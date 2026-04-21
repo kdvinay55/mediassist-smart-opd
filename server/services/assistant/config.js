@@ -4,7 +4,7 @@ const ASSISTANT_MODELS = Object.freeze({
   speechRecognition: process.env.OPENAI_MODEL_STT || 'gpt-4o-transcribe',
   // Intent classification: gpt-4o-mini is the right tool — fast (~300ms) + accurate.
   assistantLogic: process.env.OPENAI_MODEL_ASSISTANT || process.env.OPENAI_MODEL_NORMAL || 'gpt-4o-mini',
-  // Medical reasoning: gpt-5 for best clinical accuracy (with reasoning_effort='low' for speed).
+  // Medical reasoning: gpt-5 with reasoning_effort='medium' for thorough clinical accuracy.
   medicalReasoning: process.env.OPENAI_MODEL_MEDICAL || 'gpt-5',
   // Lowest-latency multilingual TTS available today.
   voiceOutput: process.env.OPENAI_MODEL_TTS || 'gpt-4o-mini-tts'
