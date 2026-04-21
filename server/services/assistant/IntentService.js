@@ -292,7 +292,15 @@ class IntentService {
     const input = String(text || '').trim();
     this.logger?.('intent_detect_requested', { model: this.model, chars: input.length });
 
-    // LLM-first: use OpenAI to classify intent and extract entities naturally
+    // RULE-FIRST: skip AI round-trip when the rule matcher is confident (>=0.9).
+    // Rules cover ~95% of patient commands (book/cancel/show/navigate/vitals)
+    // and run in sub-millisecond time, eliminating the LLM round-trip entirely.
+    const ruleResult = ruleBasedIntent(input);
+    if (ruleResult.intent !== 'GENERAL_CHAT' && ruleResult.confidence >= 0.9) {
+      return ruleResult;
+    }
+
+    // Fall back to AI only for ambiguous / general-chat / low-confidence inputs.
     if (this.openai) {
       try {
         const result = await this.aiDetectIntent(input);
@@ -309,43 +317,32 @@ class IntentService {
     }
 
     // Fallback: rule-based when OpenAI is unavailable
-    return ruleBasedIntent(input);
+    return ruleResult;
   }
 
   async aiDetectIntent(text) {
     const validIntents = Object.keys(this.handlers);
+    const todayIso = new Date().toISOString().split('T')[0];
     const response = await this.openai.chat.completions.create({
       model: this.model,
       temperature: 0,
-      max_completion_tokens: 300,
+      max_completion_tokens: 120,
       messages: [
         {
           role: 'system',
-          content: `You are an intent classifier and entity extractor for a hospital voice assistant called MediAssist.
-The user speaks in any language (English, Hindi, Telugu, Tamil, Kannada, Malayalam) — you must understand all.
-Classify the user message into exactly ONE intent and extract relevant entities.
-
-Valid intents: ${validIntents.join(', ')}
-
-Entity extraction rules:
-- BOOK_APPOINTMENT: extract "date" (ISO string), "department" (medical department name), "timeSlot" (formatted as "HH:MM AM" or "HH:MM PM" — e.g. "06:00 PM" for 6 PM, "09:30 AM" for 9:30 AM). Times are IST. If user says "now"/"right now"/"immediately"/"urgent"/"abhi"/"ippudu" → date = today (${new Date().toISOString()}). Default date is TODAY, NOT tomorrow.
-- CANCEL_APPOINTMENT: ALWAYS use this intent (never NAVIGATE) when the user mentions cancel/remove/delete/drop along with appointment(s). Extract "cancelAll" (boolean true if user says "all"/"recent"/"sab"/"anni"/"ellam" or implies multiple), "appointmentId" (if cancelling a specific one). "cancel my recent appointments" → CANCEL_APPOINTMENT with cancelAll=true.
-- SHOW_APPOINTMENTS, SHOW_LAB_RESULTS, SHOW_MEDICATIONS, SHOW_NOTIFICATIONS, GET_QUEUE, GET_WAIT_TIME, GET_ROOM: no entities needed
-- ENTER_VITALS: extract "temperature", "bloodPressure" (as "systolic/diastolic"), "heartRate", "oxygenSaturation"
-- EDIT_PATIENT: extract "field" (one of: name, phone, email, address, bloodGroup, allergies, emergencyContact, dateOfBirth, gender, chronicConditions), "newValue"
-- SET_REMINDER: extract "medication", "time"
-- NAVIGATE: extract "page", "path" (the URL path)
-- GENERAL_CHAT: for greetings, general questions, medical advice, anything that doesn't fit other intents
-
-CRITICAL date rules: Today is ${new Date().toISOString().split('T')[0]}. "now"/"right now"/"immediately"/"today itself"/"abhi"/"ippudu" = TODAY's date. "tomorrow"/"kal" = tomorrow. Default when no date mentioned = TODAY.
-Department mapping: "emergency"/"ER" → "Emergency", "heart"/"cardiac" → "Cardiology", "skin" → "Dermatology", "bone"/"joint" → "Orthopedics", "ENT" → "ENT", "eye" → "Ophthalmology", "dental"/"teeth" → "Dental", "neuro"/"brain" → "Neurology", "child"/"pediatric" → "Pediatrics", "gynec"/"women" → "Gynecology", generic/unspecified → "General Medicine", "surgery" → "Surgery"
-
-The user may speak in English, Hindi, Telugu, Tamil, Kannada, Malayalam, or mixed (Tenglish, Hinglish). Understand all.
-"chey"/"cheyi"/"cheyyi" = "do" (Telugu), "book chey" = "book it", "cancel chey" = "cancel it", "lo" = "in" (Telugu)
-"karo" = "do" (Hindi), "dikhao" = "show" (Hindi), "batao" = "tell" (Hindi)
-
-Reply with ONLY a JSON object: {"intent":"INTENT_NAME","entities":{...},"confidence":0.0-1.0}
-Do not include any other text.`
+          content: `Classify a hospital voice command into ONE intent. Reply ONLY with JSON: {"intent":"X","entities":{...},"confidence":0-1}.
+Intents: ${validIntents.join(', ')}.
+Rules:
+- BOOK_APPOINTMENT: extract date (ISO, IST), department, timeSlot ("HH:MM AM/PM", IST). Today=${todayIso}. "now/abhi/ippudu"→today.
+- CANCEL_APPOINTMENT: ALWAYS for cancel/remove/delete/drop appointment. cancelAll=true if "all/every/recent/sab/anni".
+- ENTER_VITALS: temperature, bloodPressure ("sys/dia"), heartRate, oxygenSaturation.
+- EDIT_PATIENT: field (name/phone/email/address/bloodGroup/allergies/emergencyContact/dateOfBirth/gender/chronicConditions), newValue.
+- SET_REMINDER: medication, time.
+- NAVIGATE: page, path.
+- SHOW_*/GET_*: no entities.
+- GENERAL_CHAT: anything else (greetings, medical questions).
+Dept map: heart→Cardiology, skin→Dermatology, bone→Orthopedics, eye→Ophthalmology, dental→Dental, neuro→Neurology, child→Pediatrics, women→Gynecology, none→General Medicine.
+User may speak English/Hindi/Telugu/Tamil/Kannada/Malayalam or mixed.`
         },
         { role: 'user', content: text }
       ]

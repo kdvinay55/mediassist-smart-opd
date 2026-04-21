@@ -396,11 +396,16 @@ class UnifiedAssistantService {
           language: plan.replyLanguage
         });
 
-    const fallback = plan.replyLanguage === 'en'
-      ? FALLBACK_EN
-      : await this.gateway.translateText(FALLBACK_EN, plan.replyLanguage);
+    // Only translate the English fallback if the reply was actually empty.
+    // This avoids a redundant OpenAI round-trip on every successful chat turn.
+    let finalReply = reply;
+    if (!finalReply) {
+      finalReply = plan.replyLanguage === 'en'
+        ? FALLBACK_EN
+        : await this.gateway.translateText(FALLBACK_EN, plan.replyLanguage);
+    }
 
-    const localizedReply = await this.ensureResponseLanguage(reply || fallback, plan.replyLanguage);
+    const localizedReply = await this.ensureResponseLanguage(finalReply, plan.replyLanguage);
 
     return this.buildResponsePayload(plan, {
       type: 'chat',
@@ -479,10 +484,14 @@ class UnifiedAssistantService {
       emit('delta', { delta });
     }
 
-    const fallback = plan.replyLanguage === 'en'
-      ? FALLBACK_EN
-      : await this.gateway.translateText(FALLBACK_EN, plan.replyLanguage);
-    const localizedReply = await this.ensureResponseLanguage(rawReply || fallback, plan.replyLanguage);
+    // Only translate the English fallback if the streamed reply was empty.
+    let finalReply = rawReply;
+    if (!finalReply) {
+      finalReply = plan.replyLanguage === 'en'
+        ? FALLBACK_EN
+        : await this.gateway.translateText(FALLBACK_EN, plan.replyLanguage);
+    }
+    const localizedReply = await this.ensureResponseLanguage(finalReply, plan.replyLanguage);
 
     return this.buildResponsePayload(plan, {
       type: 'chat',
