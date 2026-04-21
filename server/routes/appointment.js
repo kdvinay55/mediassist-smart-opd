@@ -30,11 +30,23 @@ router.get('/available-slots', auth, async (req, res) => {
 
     const bookedSlots = booked.map(a => a.timeSlot);
 
-    const allSlots = ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM'];
+    const allSlots = [
+      '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+      '12:00 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM',
+      '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM', '06:30 PM', '07:00 PM'
+    ];
 
-    // If booking for today, filter out past time slots
-    const now = new Date();
-    const isToday = startOfDay.toDateString() === now.toDateString();
+    // Compare against IST (Asia/Kolkata) so patients in India see correct future slots
+    // regardless of server timezone (Render runs UTC).
+    const istParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date()).reduce((a, p) => (a[p.type] = p.value, a), {});
+    const istTodayISO = `${istParts.year}-${istParts.month}-${istParts.day}`;
+    const istHour = parseInt(istParts.hour, 10);
+    const istMinute = parseInt(istParts.minute, 10);
+    const isToday = String(date).startsWith(istTodayISO);
 
     const slots = allSlots.map(slot => {
       let available = !bookedSlots.includes(slot);
@@ -44,7 +56,7 @@ router.get('/available-slots', auth, async (req, res) => {
         let [h, m] = time.split(':').map(Number);
         if (period === 'PM' && h !== 12) h += 12;
         if (period === 'AM' && h === 12) h = 0;
-        if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) {
+        if (h < istHour || (h === istHour && m <= istMinute)) {
           available = false;
         }
       }

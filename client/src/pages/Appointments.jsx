@@ -174,35 +174,47 @@ export default function Appointments() {
               </select>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Available Time Slots</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Available Time Slots</label>
+                <span className="text-xs text-gray-400">All times in IST</span>
+              </div>
               {slotsLoading ? (
                 <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
                   <Loader2 className="w-4 h-4 animate-spin" /> Checking availability...
                 </div>
               ) : !form.date || !form.department ? (
                 <p className="text-sm text-gray-400 py-2">Select a date and department to see available slots</p>
+              ) : availableSlots.length === 0 ? (
+                <p className="text-sm text-red-500 py-2">No slots configured for this date. Try another date.</p>
               ) : availableSlots.filter(s => s.available).length === 0 ? (
-                <p className="text-sm text-red-500 py-2">No available slots for this date and department. Try another date.</p>
+                <p className="text-sm text-amber-600 py-2">All slots for this date are booked or have already passed. Please pick another date.</p>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                  {availableSlots.map(({ slot, available }) => (
-                    <button
-                      key={slot}
-                      type="button"
-                      disabled={!available}
-                      onClick={() => setForm({ ...form, timeSlot: slot })}
-                      className={`py-2 px-3 rounded-xl text-sm font-medium border transition-all ${
-                        !available
-                          ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed line-through'
-                          : form.timeSlot === slot
-                            ? 'bg-primary-50 border-primary-500 text-primary-700 ring-2 ring-primary-200'
-                            : 'bg-white border-gray-200 text-gray-700 hover:border-primary-300 hover:bg-primary-50/50'
-                      }`}
-                    >
-                      {slot}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                    {availableSlots.map(({ slot, available }) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={!available}
+                        onClick={() => setForm({ ...form, timeSlot: slot })}
+                        title={!available ? 'Slot already booked or in the past (IST)' : `Book ${slot} IST`}
+                        className={`py-2 px-3 rounded-xl text-sm font-medium border transition-all ${
+                          !available
+                            ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed line-through'
+                            : form.timeSlot === slot
+                              ? 'bg-primary-50 border-primary-500 text-primary-700 ring-2 ring-primary-200'
+                              : 'bg-white border-gray-200 text-gray-700 hover:border-primary-300 hover:bg-primary-50/50'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {availableSlots.filter(s => s.available).length} of {availableSlots.length} slots open
+                    {form.timeSlot && <span className="ml-2 text-primary-600 font-medium">· Selected: {form.timeSlot} IST</span>}
+                  </p>
+                </>
               )}
             </div>
             <div>
