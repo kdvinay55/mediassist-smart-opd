@@ -545,6 +545,12 @@ Always set confidence >= 0.8 for clear booking/cancel/show/navigate intents — 
           if (!entities.timeSlot && ruleEntities.timeSlot) {
             entities.timeSlot = ruleEntities.timeSlot;
           }
+          // Date precedence: when the rule engine matched an explicit date keyword
+          // (tomorrow/day-after/today in any of 6 languages), trust it over the AI.
+          // The AI sometimes hallucinates today's date even when the user clearly said tomorrow.
+          if (ruleEntities.date) {
+            entities.date = ruleEntities.date;
+          }
           // Validate AI-supplied timeSlot format ("HH:MM AM/PM"). If garbage, re-parse from text.
           if (entities.timeSlot && !/^\d{2}:\d{2} (AM|PM)$/.test(String(entities.timeSlot).trim())) {
             const reparsed = parseTimeToSlot(String(entities.timeSlot)) || parseTimeToSlot(text);
