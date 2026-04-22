@@ -293,6 +293,13 @@ function ruleBasedIntent(text) {
   const hasDateHint = /\b(tomorrow|today|day after|on\s+\d|next week|now|right now|immediately|urgent|abhi|ippudu|kal|repu|naalai|nale|aaj|आज|कल|परसों|నేడు|రేపు|ఎల్లుండి|నిన్న|இன்று|நாளை|ಇಂದು|ನಾಳೆ|ഇന്ന്|നാളെ|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th)?)\b/iu.test(text);
   const hasDeptHint = /\b(ent|cardio|cardiology|ortho|derma|skin|eye|dental|neuro|pediatric|gynec|general medicine|generic|surgery|emergency|कार्डियोलॉजी|डर्मेटोलॉजी|जनरल मेडिसिन|दंत|कार्डియो|కార్డియాలజీ|డర్మటాలజీ|జనరల్ మెడిసిన్|మెడిసిన్|கார்டியாலஜி|பல்|ಕಾರ್ಡಿಯಾಲಜಿ|ഹൃദ്രോഗ|ദന്ത)/iu.test(text);
 
+  // "change status of my appointment" / "स्थिति बदल" / "స్థితి మార్చు" => CANCEL
+  // (the only mutable status patients control through the assistant is cancellation).
+  if (hasAppt && /\b(status|cancel|stop|reschedul)/i.test(text) === false
+      && /(स्थिति\s*बदल|अपॉइंटमेंट\s*बदल|స్థితి\s*మార్చ|అపాయింట్‌?మెంట్\s*మార్చ|ಸ್ಥಿತಿ\s*ಬದಲ|അവസ്ഥ\s*മാറ്റ)/iu.test(text)) {
+    return { intent: 'CANCEL_APPOINTMENT', entities: { cancelAll: false }, confidence: 0.95 };
+  }
+
   // CANCEL has top priority over BOOK when "cancel" verb is present anywhere — politeness
   // wrappers like "I would appreciate it if you could cancel..." otherwise leak into BOOK.
   if (CANCEL_RX.test(text) && (hasAppt || /\b(all|every|sab|saare|anni|ellam)\b/iu.test(text))) {
