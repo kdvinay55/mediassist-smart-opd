@@ -293,18 +293,30 @@ function ruleBasedIntent(text) {
   const hasDateHint = /\b(tomorrow|today|day after|on\s+\d|next week|now|right now|immediately|urgent|abhi|ippudu|kal|repu|naalai|nale|aaj|आज|कल|परसों|నేడు|రేపు|ఎల్లుండి|నిన్న|இன்று|நாளை|ಇಂದು|ನಾಳೆ|ഇന്ന്|നാളെ|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?:st|nd|rd|th)?)\b/iu.test(text);
   const hasDeptHint = /\b(ent|cardio|cardiology|ortho|derma|skin|eye|dental|neuro|pediatric|gynec|general medicine|generic|surgery|emergency|कार्डियोलॉजी|डर्मेटोलॉजी|जनरल मेडिसिन|दंत|कार्डియो|కార్డియాలజీ|డర్మటాలజీ|జనరల్ మెడిసిన్|మెడిసిన్|கார்டியாலஜி|பல்|ಕಾರ್ಡಿಯಾಲಜಿ|ഹൃദ്രോഗ|ദന്ത)/iu.test(text);
 
+  // CANCEL has top priority over BOOK when "cancel" verb is present anywhere — politeness
+  // wrappers like "I would appreciate it if you could cancel..." otherwise leak into BOOK.
+  if (CANCEL_RX.test(text) && (hasAppt || /\b(all|every|sab|saare|anni|ellam)\b/iu.test(text))) {
+    const cancelAll = /\b(all|every|recent|sab|saare|anni|ellam|ella|ellaam|सब|सारे|सभी|అన్ని|అన్నీ|எல்லா|எல்லாம்|ಎಲ್ಲಾ|എല്ലാം)\b/iu.test(text);
+    return { intent: 'CANCEL_APPOINTMENT', entities: { cancelAll }, confidence: 0.95 };
+  }
+
+  // Vital with numeric reading is unambiguous — "Kindly note my BP is 120/80" is ENTER_VITALS.
+  const NUMERIC_VITAL_RX = /\b(\d{2,3}\s*\/\s*\d{2,3}|\d{2,3}\s*over\s*\d{2,3}|\d{2,3}\s*(mg\/?dl|bpm|°?\s*[fc]\b|degrees?))\b/iu;
+  if (VITAL_RX.test(text) && NUMERIC_VITAL_RX.test(text)) {
+    return { intent: 'ENTER_VITALS', entities: extractVitalsEntities(text), confidence: 0.95 };
+  }
+
   if (hasAppt && (hasBookVerb || hasDateHint || hasDeptHint)) {
     return { intent: 'BOOK_APPOINTMENT', entities: extractBookingEntities(text), confidence: 0.95 };
   }
   // Strong booking signal even without the literal word "appointment":
   // a booking verb + (department OR specific time) is unambiguous in this hospital app.
   // Catches "Schedule General Medicine for tomorrow at 6:30 pm", "Book Cardiology at 4pm".
-  if (hasBookVerb && (hasDeptHint || parseTimeToSlot(text))) {
+  // BUT skip if the sentence is a question about needing medicine/treatment ("Do I need antibiotics...").
+  const isMedicalQuestion = /\b(do|should|can|will|would)\s+(i|we|you|my)\b.*\b(need|take|have|use|try)\b/iu.test(text)
+    && /\b(antibiotic|medicine|medication|treatment|drug|pill|paracetamol|ibuprofen|tablet|cure|remedy|fever|cold|flu|infection|pain)\b/iu.test(text);
+  if (hasBookVerb && (hasDeptHint || parseTimeToSlot(text)) && !isMedicalQuestion) {
     return { intent: 'BOOK_APPOINTMENT', entities: extractBookingEntities(text), confidence: 0.9 };
-  }
-  if (CANCEL_RX.test(text) && hasAppt) {
-    const cancelAll = /\b(all|every|recent|sab|saare|anni|ellam|ella|ellaam|सब|सारे|सभी|అన్ని|అన్నీ|எல்லா|எல்லாம்|ಎಲ್ಲಾ|എല്ലാം)\b/iu.test(text);
-    return { intent: 'CANCEL_APPOINTMENT', entities: { cancelAll }, confidence: 0.95 };
   }
   if ((SHOW_RX.test(text) && hasAppt) || (MY_RX.test(text) && hasAppt)) {
     return { intent: 'SHOW_APPOINTMENTS', entities: {}, confidence: 0.95 };
@@ -315,7 +327,7 @@ function ruleBasedIntent(text) {
   if (MED_RX.test(text) && SHOW_RX.test(text)) {
     return { intent: 'SHOW_MEDICATIONS', entities: {}, confidence: 0.95 };
   }
-  if (VITAL_RX.test(text) && /\b(enter|record|log|add|update|submit|check|measure|दर्ज|रिकॉर्ड|నమోదు|రికార్డ్|பதிவு|ದಾಖಲಿಸು|രേഖപ്പെടുത്തു)\b/iu.test(text)) {
+  if (VITAL_RX.test(text) && /\b(enter|record|log|add|update|submit|check|measure|note|noting|noted|दर्ज|रिकॉर्ड|నమోదు|రికార్డ్|பதிவு|ದಾಖಲಿಸು|രേഖപ്പെടുത്തു)\b/iu.test(text)) {
     return { intent: 'ENTER_VITALS', entities: extractVitalsEntities(text), confidence: 0.95 };
   }
   if (/\b(update|change|edit|modify|correct|बदल|अपडेट|మార్చు|అప్‌డేట్|மாற்று|ಬದಲಾಯಿಸು|മാറ്റം)\b/iu.test(text) && /\b(name|phone|email|address|blood group|allergies?|allergy|emergency contact|date of birth|dob|gender|medication|chronic|condition|नाम|फोन|पता|పేరు|ఫోన్|பெயர்|ತಮಾಷೆ|പേര്)\b/iu.test(text)) {
@@ -483,15 +495,15 @@ Intents: ${validIntents.join(', ')}.
 
 CRITICAL RULES:
 - ANY phrase asking to BOOK / SCHEDULE / RESERVE / MAKE / GET / NEED / WANT an appointment, slot or visit (in ANY language) -> BOOK_APPOINTMENT. Words like "Schedule General Medicine for 6:30 pm" are BOOK_APPOINTMENT, NEVER SHOW_MEDICATIONS.
-- ANY phrase asking to CANCEL / REMOVE / DELETE / DROP an appointment (in ANY language) -> CANCEL_APPOINTMENT. cancelAll=true if "all/every/sab/anni/ellam/saare/saari".
+- ANY phrase asking to CANCEL / REMOVE / DELETE / DROP / KILL an appointment (in ANY language) -> CANCEL_APPOINTMENT. cancelAll=true if "all/every/sab/anni/ellam/saare/saari". Politeness wrappers like "I would appreciate it if you could cancel...", "kindly cancel...", "please cancel..." are STILL CANCEL_APPOINTMENT, NEVER BOOK_APPOINTMENT.
 - ANY phrase asking to SEE / SHOW / LIST / VIEW appointments -> SHOW_APPOINTMENTS.
 - ANY phrase asking for lab / test results -> SHOW_LAB_RESULTS.
 - ANY phrase asking what medicines/medications I am taking -> SHOW_MEDICATIONS.
-- ANY phrase entering vitals (BP, sugar, temp, pulse, oxygen) -> ENTER_VITALS.
-- ANY phrase changing patient data (name/phone/email/address) -> EDIT_PATIENT.
+- ANY phrase RECORDING / NOTING / LOGGING / SUBMITTING vital signs (BP, sugar, temp, pulse, oxygen) WITH numeric values -> ENTER_VITALS. Phrases like "Kindly note my BP is 120/80", "I would like my BP recorded at 120/80", "log my sugar 110" are ENTER_VITALS, NEVER GENERAL_CHAT.
+- ANY phrase changing patient PROFILE data (name/phone/email/address) -> EDIT_PATIENT.
 - ANY phrase setting a medicine reminder -> SET_REMINDER.
 - ANY phrase asking to OPEN / GO TO / NAVIGATE TO a page -> NAVIGATE.
-- A medical / symptom QUESTION (no booking verb) -> GENERAL_CHAT.
+- A medical / symptom QUESTION (no booking verb, no numeric vital) -> GENERAL_CHAT. Questions like "Do I need antibiotics for viral fever?" or "Should I take medicine for X?" are GENERAL_CHAT, NEVER BOOK_APPOINTMENT — they ask for medical advice, not an appointment.
 
 For BOOK_APPOINTMENT entities ALWAYS extract:
   - date: ISO string in IST. Today=${todayIso}. Map "today/abhi/ippudu/ippo/ipo/ee roju/aaj"->today, "tomorrow/kal/repu/naalai/nale/nale"->today+1day, "day after tomorrow/parso/eluve/ellundi"->today+2days.
