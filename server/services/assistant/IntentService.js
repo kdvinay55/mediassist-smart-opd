@@ -280,7 +280,7 @@ function ruleBasedIntent(text) {
   // Tested against the AI harness corpus.
   const APPT_RX = /(appointment|appt|booking|slot|consultation|अपॉइंटमेंट|अपायंटमेंट|समय|मुलाकात|अपायन्तमेन्त|appointmentlu|appoint|అపాయింట్‌మెంట్|అపాయింట్మెంట్|అపాయింటమెంట్|appointmentu|appointment-?[\u0c00-\u0c7f]*|அப்பாயிண்ட்மென்ட்|அப்பாயிண்ட்|ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್|ಅಪಾಯಿಂಟ್ಮೆಂಟ್|അപ്പോയിന്റ്മെന്റ്|അപ്പോയ്ന്റ്മെന്റ്)/iu;
   const BOOK_VERB_RX = /(book|schedule|make|fix|set up|need|want|get|reserve|arrange|chey|cheyi|karo|kar do|chahiye|kavali|venum|bek|बुक|लेना|करो|कर दो|चाहिए|बुक करना|शेड्यूल|बनाओ|లేదా|బుక్|చేయి|చెయ్యి|కావాలి|తీసుకో|శెడ్యూల్|షెడ్యూల్|பதிவு|பதிவுசெய்|போடு|வேண்டும்|ஏற்பாடு|ಬುಕ್|ಮಾಡು|ಬೇಕು|ವ್ಯವಸ್ಥೆ|ബുക്ക്|വേണം|സെറ്റ്)/iu;
-  const CANCEL_RX = /(cancel|remove|delete|drop|stop|रद्द|कैंसल|हटा|निरस्त|रोक|रोको|बंद|రద్దు|క్యాన్సల్|తీసేయి|తొలగించు|ఆపు|ஆபు|ரத்து|நீக்க|விலக்கு|ரத்துசெய்|நிறுத்து|ಕ್ಯಾನ್ಸಲ್|ರದ್ದು|ತೆಗೆದು|ನಿಲ್ಲಿಸು|റദ്ദ്|ക്യാൻസൽ|ഒഴിവാക്കു|നിർത്തു)/iu;
+  const CANCEL_RX = /(cancel|remove|delete|drop|stop|रद्द|कैंसल|हटा|निरस्त|रोक|रोको|बंद|స్థగిత|రద్దు|క్యాన్సల్|తీసేయ|తొలగించ|ఆపు|ஆபు|ரத்து|நீக்க|விலக்கு|ரத்துசெய்|நிறுத்து|ಕ್ಯಾನ್ಸಲ್|ರದ್ದು|ತೆಗೆದು|ನಿಲ್ಲಿಸು|ಸ್ಥಗಿತ|റദ്ദ|ക്യാൻസൽ|ഒഴിവാക്കു|നിർത്തു|സ്ഥഗിത)/iu;
   const SHOW_RX = /(show|list|view|see|get|display|check|दिखा|बता|देख|లిస్ట్|చూపించు|చూడు|చూస్తాను|காட்டு|பார்|பட்டியல்|ತೋರಿಸು|ನೋಡು|കാണിക്കു|കാണു)/iu;
   const MY_RX = /\b(my|mine|mera|meri|naa|nenu|en|enathu|ente|nanage|nann|nann\(u\))\b|मेरा|मेरी|मेरे|నా|నాకు|నేను|என்|என்னுடைய|ನನ್ನ|എന്റെ/iu;
   const MED_RX = /(medication|medicine|drug|pill|prescription|दवा|दवाई|మందు|మెడిసిన్|మందులు|மருந்து|ಔಷಧಿ|മരുന്ന്)/iu;
@@ -318,7 +318,10 @@ function ruleBasedIntent(text) {
   if (hasBookVerb && (hasDeptHint || parseTimeToSlot(text)) && !isMedicalQuestion) {
     return { intent: 'BOOK_APPOINTMENT', entities: extractBookingEntities(text), confidence: 0.9 };
   }
-  if ((SHOW_RX.test(text) && hasAppt) || (MY_RX.test(text) && hasAppt)) {
+  // SHOW_APPOINTMENTS requires an explicit SHOW/ASK verb together with appointment word.
+  // We deliberately do NOT match "MY + appointment" alone because Indic substrings like
+  // "నా" (my) appear inside unrelated words like "నాలుగు" (four), causing BOOK->SHOW misroute.
+  if (hasAppt && (SHOW_RX.test(text) || /\b(status|upcoming|scheduled|when|next|पेंडिंग|आगामी|స్థితి|రాబోయే|வரவிருக்கும்|ಮುಂಬರುವ|വരാനിരിക്കുന്ന)\b/iu.test(text))) {
     return { intent: 'SHOW_APPOINTMENTS', entities: {}, confidence: 0.95 };
   }
   if (LAB_RX.test(text)) {
