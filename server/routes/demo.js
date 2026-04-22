@@ -7,6 +7,9 @@ const Vitals = require('../models/Vitals');
 const WorkflowState = require('../models/WorkflowState');
 const Consultation = require('../models/Consultation');
 const LabResult = require('../models/LabResult');
+const Medication = require('../models/Medication');
+const Notification = require('../models/Notification');
+const Feedback = require('../models/Feedback');
 
 const router = express.Router();
 
@@ -226,6 +229,43 @@ router.post('/seed', async (req, res) => {
   } catch (error) {
     console.error('Seed error:', error);
     res.status(500).json({ error: 'Seed failed', details: error.message });
+  }
+});
+
+// POST /api/demo/reset/:email — wipe a single patient's transactional data
+// (keeps the user account + base profile so they can log back in clean).
+router.post('/reset/:email', async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const uid = user._id;
+    const [appts, vitals, workflows, consults, labs, meds, notifs, feedback] = await Promise.all([
+      Appointment.deleteMany({ patientId: uid }),
+      Vitals.deleteMany({ patientId: uid }),
+      WorkflowState.deleteMany({ patientId: uid }),
+      Consultation.deleteMany({ patientId: uid }),
+      LabResult.deleteMany({ patientId: uid }),
+      Medication.deleteMany({ patientId: uid }),
+      Notification.deleteMany({ userId: uid }),
+      Feedback.deleteMany({ userId: uid }).catch(() => ({ deletedCount: 0 }))
+    ]);
+    res.json({
+      success: true,
+      email: req.params.email,
+      deleted: {
+        appointments: appts.deletedCount,
+        vitals: vitals.deletedCount,
+        workflowStates: workflows.deletedCount,
+        consultations: consults.deletedCount,
+        labResults: labs.deletedCount,
+        medications: meds.deletedCount,
+        notifications: notifs.deletedCount,
+        feedback: feedback.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.status(500).json({ error: 'Reset failed', details: error.message });
   }
 });
 
