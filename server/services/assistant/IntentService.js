@@ -415,7 +415,7 @@ async function pickAvailableSlot(date, department, requested) {
 class IntentService {
   constructor({ logger, openaiClient } = {}) {
     this.logger = logger;
-    this.model = ASSISTANT_MODELS.assistantLogic;
+    this.model = ASSISTANT_MODELS.intentClassifier || 'gpt-4o';
     this.openai = openaiClient || null;
     this.handlers = {
       BOOK_APPOINTMENT: this.bookAppointment.bind(this),

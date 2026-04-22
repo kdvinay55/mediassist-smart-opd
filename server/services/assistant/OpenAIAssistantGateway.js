@@ -57,12 +57,14 @@ function buildTranslationMode(language, confidenceScore, detectionMode) {
 }
 
 function buildTokenParams(model, maxTokens) {
+  // gpt-5 spends most tokens on hidden reasoning before emitting output.
+  // Triple the budget with a 1500-token floor so reasoning + reply both fit.
   return /^gpt-5/i.test(String(model || ''))
-    ? { max_completion_tokens: Math.max(maxTokens * 2, 512) }
+    ? { max_completion_tokens: Math.max(maxTokens * 3, 1500) }
     : { max_tokens: maxTokens };
 }
 
-function buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort = 'medium' } = {}) {
+function buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort = 'low' } = {}) {
   return {
     ...buildTokenParams(model, maxTokens),
     ...(/^gpt-5/i.test(String(model || ''))

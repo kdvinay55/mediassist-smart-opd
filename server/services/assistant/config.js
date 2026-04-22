@@ -2,6 +2,11 @@ const ASSISTANT_MODELS = Object.freeze({
   wakeWord: 'vosk',
   // Best transcription model for multilingual + Indic scripts.
   speechRecognition: process.env.OPENAI_MODEL_STT || 'gpt-4o-transcribe',
+  // Intent classification: pinned to a fast JSON-following chat model.
+  // Independent from `assistantLogic` (which controls free-text reply generation)
+  // so deployments can run gpt-5 for chat replies WITHOUT breaking intent JSON output.
+  // Override with OPENAI_MODEL_INTENT only.
+  intentClassifier: process.env.OPENAI_MODEL_INTENT || 'gpt-4o',
   // Intent classification: gpt-4o gives MUCH better multilingual instruction following than gpt-4o-mini.
   // Override OPENAI_MODEL_ASSISTANT to swap (e.g. 'gpt-4o-mini' for cost, 'gpt-5' for max quality).
   assistantLogic: process.env.OPENAI_MODEL_ASSISTANT || process.env.OPENAI_MODEL_NORMAL || 'gpt-4o',
