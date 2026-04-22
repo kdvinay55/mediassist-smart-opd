@@ -115,17 +115,21 @@ class OpenAIAssistantGateway {
     this.assistantModel = ASSISTANT_MODELS.assistantLogic;
     this.transcriptionModel = ASSISTANT_MODELS.speechRecognition;
     this.ttsModel = ASSISTANT_MODELS.voiceOutput;
+    this.medicalModel = ASSISTANT_MODELS.medicalReasoning;
+    this.medicalReasoningEffort = ASSISTANT_MODELS.medicalReasoningEffort || 'low';
     this.languageMap = Object.fromEntries(SUPPORTED_LANGUAGES.map((entry) => [entry.code, entry.label]));
   }
 
-  async complete({ model = this.assistantModel, systemPrompt, userPrompt, temperature = 0.2, maxTokens = 180 } = {}) {
+  async complete({ model = this.assistantModel, systemPrompt, userPrompt, temperature = 0.2, maxTokens = 180, reasoningEffort } = {}) {
     if (!this.client) {
       return null;
     }
 
+    const effort = reasoningEffort || (model === this.medicalModel ? this.medicalReasoningEffort : 'low');
+
     const response = await this.client.chat.completions.create({
       model,
-      ...buildCompletionConfig(model, temperature, maxTokens),
+      ...buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort: effort }),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -135,14 +139,16 @@ class OpenAIAssistantGateway {
     return response?.choices?.[0]?.message?.content?.trim() || null;
   }
 
-  async *streamComplete({ model = this.assistantModel, systemPrompt, userPrompt, temperature = 0.2, maxTokens = 180 } = {}) {
+  async *streamComplete({ model = this.assistantModel, systemPrompt, userPrompt, temperature = 0.2, maxTokens = 180, reasoningEffort } = {}) {
     if (!this.client) {
       return;
     }
 
+    const effort = reasoningEffort || (model === this.medicalModel ? this.medicalReasoningEffort : 'low');
+
     const stream = await this.client.chat.completions.create({
       model,
-      ...buildCompletionConfig(model, temperature, maxTokens),
+      ...buildCompletionConfig(model, temperature, maxTokens, { reasoningEffort: effort }),
       stream: true,
       messages: [
         { role: 'system', content: systemPrompt },

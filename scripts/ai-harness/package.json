@@ -1,0 +1,17 @@
+{
+  "name": "ai-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "gen": "node generate-corpus.js --per-lang 100",
+    "gen:small": "node generate-corpus.js --per-lang 30",
+    "run": "node run.js",
+    "run:smoke": "node run.js --limit 10 --concurrency 3",
+    "run:local": "node run.js --base http://localhost:5000"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4.67.0"
+  }
+}

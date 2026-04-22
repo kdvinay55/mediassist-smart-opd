@@ -31,9 +31,10 @@ export const ASSISTANT_RECOVERY_LIMITS = Object.freeze({
 export const ASSISTANT_LATENCY_THRESHOLDS = Object.freeze({
   wakeWord: 800,
   transcription: 3000,
-  intent: 3000,
+  // Intent latency includes the full LLM round-trip; reasoning models routinely take 4-7s.
+  intent: 7000,
   tts: 4000,
-  totalResponse: 8000
+  totalResponse: 12000
 });
 
 export const SUPPORTED_LANGUAGES = Object.freeze([

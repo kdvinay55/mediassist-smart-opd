@@ -280,12 +280,9 @@ class UnifiedAssistantService {
     if (normalizedTargetLanguage === 'en' && /[A-Za-z]/.test(text)) {
       return text;
     }
-    // Code-mix tolerance: if reply already contains *some* native script of the target language
-    // OR is mostly Latin (likely a Romanized regional reply like Tenglish/Hinglish), accept it.
-    const hasAnyNativeScript = /[\u0900-\u0D7F]/.test(text);
-    if (!hasAnyNativeScript && /[A-Za-z]/.test(text)) {
-      return text;
-    }
+    // For non-English targets, if the reply is pure-Latin English (no native script at all),
+    // it MUST be translated. Previously a "code-mix tolerance" branch accepted Latin-only replies
+    // which silently leaked English handler messages (e.g. "Done. Your Cardiology appointment...").
     return this.gateway.translateText(text, normalizedTargetLanguage);
   }
 
