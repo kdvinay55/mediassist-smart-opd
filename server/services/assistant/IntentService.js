@@ -280,7 +280,7 @@ function ruleBasedIntent(text) {
   // Tested against the AI harness corpus.
   const APPT_RX = /(appointment|appt|booking|slot|consultation|अपॉइंटमेंट|अपायंटमेंट|समय|मुलाकात|अपायन्तमेन्त|appointmentlu|appoint|అపాయింట్‌మెంట్|అపాయింట్మెంట్|అపాయింటమెంట్|appointmentu|appointment-?[\u0c00-\u0c7f]*|அப்பாயிண்ட்மென்ட்|அப்பாயிண்ட்|ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್|ಅಪಾಯಿಂಟ್ಮೆಂಟ್|അപ്പോയിന്റ്മെന്റ്|അപ്പോയ്ന്റ്മെന്റ്)/iu;
   const BOOK_VERB_RX = /(book|schedule|make|fix|set up|need|want|get|reserve|arrange|chey|cheyi|karo|kar do|chahiye|kavali|venum|bek|बुक|लेना|करो|कर दो|चाहिए|बुक करना|शेड्यूल|बनाओ|లేదా|బుక్|చేయి|చెయ్యి|కావాలి|తీసుకో|శెడ్యూల్|షెడ్యూల్|பதிவு|பதிவுசெய்|போடு|வேண்டும்|ஏற்பாடு|ಬುಕ್|ಮಾಡು|ಬೇಕು|ವ್ಯವಸ್ಥೆ|ബുക്ക്|വേണം|സെറ്റ്)/iu;
-  const CANCEL_RX = /(cancel|remove|delete|drop|रद्द|कैंसल|हटा|निरस्त|రద్దు|క్యాన్సల్|తీసేయి|తొలగించు|ரத்து|நீக்க|விலக்கு|ரத்துசெய்|ಕ್ಯಾನ್ಸಲ್|ರದ್ದು|ತೆಗೆದು|റദ്ദ്|ക്യാൻസൽ|ഒഴിവാക്കു)/iu;
+  const CANCEL_RX = /(cancel|remove|delete|drop|stop|रद्द|कैंसल|हटा|निरस्त|रोक|रोको|बंद|రద్దు|క్యాన్సల్|తీసేయి|తొలగించు|ఆపు|ஆபు|ரத்து|நீக்க|விலக்கு|ரத்துசெய்|நிறுத்து|ಕ್ಯಾನ್ಸಲ್|ರದ್ದು|ತೆಗೆದು|ನಿಲ್ಲಿಸು|റദ്ദ്|ക്യാൻസൽ|ഒഴിവാക്കു|നിർത്തു)/iu;
   const SHOW_RX = /(show|list|view|see|get|display|check|दिखा|बता|देख|లిస్ట్|చూపించు|చూడు|చూస్తాను|காட்டு|பார்|பட்டியல்|ತೋರಿಸು|ನೋಡು|കാണിക്കു|കാണു)/iu;
   const MY_RX = /\b(my|mine|mera|meri|naa|nenu|en|enathu|ente|nanage|nann|nann\(u\))\b|मेरा|मेरी|मेरे|నా|నాకు|నేను|என்|என்னுடைய|ನನ್ನ|എന്റെ/iu;
   const MED_RX = /(medication|medicine|drug|pill|prescription|दवा|दवाई|మందు|మెడిసిన్|మందులు|மருந்து|ಔಷಧಿ|മരുന്ന്)/iu;
@@ -324,7 +324,9 @@ function ruleBasedIntent(text) {
   if (LAB_RX.test(text)) {
     return { intent: 'SHOW_LAB_RESULTS', entities: {}, confidence: 0.95 };
   }
-  if (MED_RX.test(text) && SHOW_RX.test(text)) {
+  // SHOW_MEDICATIONS: "show my meds", "what medicines am I taking", "let me know my medications", "tell me my prescriptions"
+  const ASK_VERB_RX = /\b(let me know|tell me|what (are|is)|which|am i taking|do i take|currently taking|on right now|बता|बताओ|कौन|చెప్పు|ఏమిటి|ఏం|எவை|ಯಾವ|എന്താണ്)\b/iu;
+  if (MED_RX.test(text) && (SHOW_RX.test(text) || ASK_VERB_RX.test(text) || MY_RX.test(text))) {
     return { intent: 'SHOW_MEDICATIONS', entities: {}, confidence: 0.95 };
   }
   if (VITAL_RX.test(text) && /\b(enter|record|log|add|update|submit|check|measure|note|noting|noted|दर्ज|रिकॉर्ड|నమోదు|రికార్డ్|பதிவு|ದಾಖಲಿಸು|രേഖപ്പെടുത്തു)\b/iu.test(text)) {
@@ -451,7 +453,29 @@ class IntentService {
     const input = String(text || '').trim();
     this.logger?.('intent_detect_requested', { model: this.model, chars: input.length });
 
-    // AI-only classification (rule-based fallback used solely if OpenAI is unreachable).
+    // FAST-PATH: rule engine wins for unambiguous intents (cancel/show/vital/medical-Q&A).
+    // Catches gpt-4o failure modes like:
+    //   "I would appreciate it if you could cancel..." -> AI returns BOOK_APPOINTMENT
+    //   "Kindly note my BP is 120/80" -> AI returns GENERAL_CHAT
+    //   "Do I need antibiotics for viral fever?" -> AI returns BOOK_APPOINTMENT
+    const preRule = ruleBasedIntent(input);
+    if (preRule && preRule.confidence >= 0.95
+        && ['CANCEL_APPOINTMENT', 'SHOW_APPOINTMENTS', 'SHOW_LAB_RESULTS',
+            'SHOW_MEDICATIONS', 'ENTER_VITALS', 'SET_REMINDER'].includes(preRule.intent)) {
+      this.logger?.('rule_intent_fastpath', { intent: preRule.intent });
+      return preRule;
+    }
+    // Block "Do I need / Should I take ... medicine/antibiotic ..." style medical questions
+    // from being booked by the AI — force GENERAL_CHAT here.
+    const isMedicalQuestion = /\b(do|should|can|will|would)\s+(i|we|you|my)\b.*\b(need|take|have|use|try)\b/iu.test(input)
+      && /\b(antibiotic|medicine|medication|treatment|drug|pill|paracetamol|ibuprofen|tablet|cure|remedy|fever|cold|flu|infection|pain)\b/iu.test(input)
+      && /\?/.test(input);
+    if (isMedicalQuestion) {
+      this.logger?.('rule_intent_force_general_chat_medical_q', {});
+      return { intent: 'GENERAL_CHAT', entities: {}, confidence: 0.9 };
+    }
+
+    // AI-driven classification with rule-based fallback / disagreement override.
     if (this.openai) {
       try {
         const result = await this.aiDetectIntent(input);
