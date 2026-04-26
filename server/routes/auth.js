@@ -130,6 +130,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        profileId: user.profileId,
         department: user.department || '',
         avatar: user.avatar,
         onboardingComplete: user.onboardingComplete
@@ -186,6 +187,7 @@ router.post('/verify-otp', async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        profileId: user.profileId,
         department: user.department || '',
         onboardingComplete: user.onboardingComplete
       }
@@ -307,6 +309,14 @@ router.post('/reset-password', async (req, res) => {
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   const user = req.user;
+  // Backfill profileId for legacy users created before the field existed.
+  if (!user.profileId) {
+    try {
+      await user.save(); // pre-validate hook assigns a unique 4-digit id
+    } catch (e) {
+      console.error('profileId backfill failed:', e.message);
+    }
+  }
   let patientProfile = null;
   if (user.role === 'patient') {
     patientProfile = await Patient.findOne({ userId: user._id });

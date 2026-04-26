@@ -157,9 +157,9 @@ export default function VoiceAssistant() {
                 )}
                 {messages.map((message, index) => (
                   <div key={`${message.timestamp}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                    <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-blue-100 text-gray-900 border border-blue-200'}`}>
                       {message.content || (message.streaming ? '…' : '')}
-                      {message.streaming && message.content && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-gray-500 align-middle" />}
+                      {message.streaming && message.content && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-gray-700 align-middle" />}
                     </div>
                   </div>
                 ))}

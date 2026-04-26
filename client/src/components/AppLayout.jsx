@@ -102,7 +102,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100 transform transition-transform duration-300 lg:translate-x-0 lg:static lg:flex lg:flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100 transform transition-transform duration-300 lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
         {/* Logo */}
         <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-100">
           <img src="/srm-logo.png" alt="SRM BioVault" className="w-9 h-9 rounded-full object-cover" />
@@ -141,6 +141,9 @@ export default function AppLayout({ children }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
               <p className="text-xs text-gray-400 capitalize">{user?.role === 'admin' ? (user?.department === 'laboratory' ? 'Lab Technician' : 'Receptionist') : user?.role}</p>
+              {user?.profileId && (
+                <p className="mt-0.5 text-[10px] font-mono tracking-widest text-primary-600">#{user.profileId}</p>
+              )}
             </div>
             <button onClick={handleLogout} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition" title="Logout">
               <LogOut className="w-4 h-4" />

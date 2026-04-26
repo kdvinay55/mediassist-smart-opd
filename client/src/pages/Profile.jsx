@@ -83,6 +83,12 @@ export default function Profile() {
           </div>
           <p className="text-gray-500">{user?.email}</p>
           <p className="text-sm text-gray-400 capitalize">{user?.role}</p>
+          {user?.profileId && (
+            <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+              Profile ID
+              <span className="font-mono tracking-widest text-primary-900">#{user.profileId}</span>
+            </p>
+          )}
         </div>
       </div>
 
