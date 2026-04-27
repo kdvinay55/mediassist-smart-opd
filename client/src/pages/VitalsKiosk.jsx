@@ -426,7 +426,7 @@ export default function VitalsKiosk() {
                     <Upload className="w-5 h-5" /> Upload Photo
                   </button>
                 </div>
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
               </div>
             )}
           </div>
