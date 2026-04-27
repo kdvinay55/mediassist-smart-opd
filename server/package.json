@@ -34,6 +34,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "mongodb-memory-server": "^8.11.0"
   }
 }
