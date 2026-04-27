@@ -11,3 +11,4 @@ graphify-out/.graphify_*
 .vercel/
 server/.env.render
 server/.env
+.vercel
