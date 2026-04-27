@@ -42,14 +42,15 @@ async function generateUniqueProfileId(Model) {
 }
 
 userSchema.pre('validate', async function assignProfileId(next) {
+  if (this.profileId) return next();
   try {
-    if (!this.profileId) {
-      this.profileId = await generateUniqueProfileId(this.constructor);
-    }
-    next();
+    this.profileId = await generateUniqueProfileId(this.constructor);
   } catch (err) {
-    next(err);
+    // Never block signup if profileId generation has a transient issue;
+    // /auth/me will retry the assignment on the next request.
+    console.error('profileId generation skipped:', err.message);
   }
+  next();
 });
 
 module.exports = mongoose.model('User', userSchema);
