@@ -102,7 +102,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100 transform transition-transform duration-300 lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100 transform transition-transform duration-300 lg:transform-none lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
         {/* Logo */}
         <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-100">
           <img src="/srm-logo.png" alt="SRM BioVault" className="w-9 h-9 rounded-full object-cover" />

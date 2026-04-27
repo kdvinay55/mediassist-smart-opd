@@ -103,7 +103,8 @@ export default function VoiceAssistant() {
             onClick={() => setOpen(true)}
             aria-label="Open MediAssist voice assistant"
             data-testid="assistant-fab"
-            className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-xl shadow-blue-500/30"
+            style={{ backgroundColor: '#2563eb', color: '#ffffff', boxShadow: '0 10px 24px rgba(37, 99, 235, 0.4)' }}
+            className="fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full"
           >
             <Mic className="h-6 w-6" />
           </motion.button>
@@ -126,7 +127,10 @@ export default function VoiceAssistant() {
               exit={{ opacity: 0, y: 24 }}
               className="fixed bottom-4 right-4 z-[70] flex h-[560px] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-2xl"
             >
-              <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-3 text-white">
+              <div
+                style={{ backgroundColor: '#2563eb', color: '#ffffff' }}
+                className="flex items-center justify-between px-4 py-3"
+              >
                 <div>
                   <div className="text-sm font-semibold">MediAssist</div>
                   <div className="text-xs text-white/75">Voice Assistant</div>
@@ -157,7 +161,12 @@ export default function VoiceAssistant() {
                 )}
                 {messages.map((message, index) => (
                   <div key={`${message.timestamp}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-blue-100 text-gray-900 border border-blue-200'}`}>
+                    <div
+                      style={message.role === 'user'
+                        ? { backgroundColor: '#2563eb', color: '#ffffff' }
+                        : { backgroundColor: '#dbeafe', color: '#0f172a', border: '1px solid #93c5fd' }}
+                      className="max-w-[82%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap"
+                    >
                       {message.content || (message.streaming ? '…' : '')}
                       {message.streaming && message.content && <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-gray-700 align-middle" />}
                     </div>
@@ -170,7 +179,13 @@ export default function VoiceAssistant() {
                   <button
                     onClick={handleMicClick}
                     disabled={micDisabled}
-                    className={`flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg ${state === ASSISTANT_STATES.LISTENING ? 'bg-red-500 shadow-red-500/25' : 'bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-500/25'}`}
+                    style={{
+                      backgroundColor: state === ASSISTANT_STATES.LISTENING ? '#ef4444' : '#2563eb',
+                      color: '#ffffff',
+                      boxShadow: '0 8px 16px rgba(37, 99, 235, 0.35)'
+                    }}
+                    className="flex h-14 w-14 items-center justify-center rounded-full disabled:opacity-50"
+                    aria-label={state === ASSISTANT_STATES.LISTENING ? 'Stop listening' : 'Start listening'}
                   >
                     {state === ASSISTANT_STATES.LISTENING ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
                   </button>
