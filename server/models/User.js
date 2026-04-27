@@ -41,8 +41,8 @@ async function generateUniqueProfileId(Model) {
   throw new Error('No 4-digit profileId available');
 }
 
-userSchema.pre('validate', async function assignProfileId(next) {
-  if (this.profileId) return next();
+userSchema.pre('validate', async function assignProfileId() {
+  if (this.profileId) return;
   try {
     this.profileId = await generateUniqueProfileId(this.constructor);
   } catch (err) {
@@ -50,7 +50,6 @@ userSchema.pre('validate', async function assignProfileId(next) {
     // /auth/me will retry the assignment on the next request.
     console.error('profileId generation skipped:', err.message);
   }
-  next();
 });
 
 module.exports = mongoose.model('User', userSchema);
