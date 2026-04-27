@@ -54,6 +54,7 @@ export default function VitalsKiosk() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const streamRef = useRef(null);
 
   // Cleanup camera on unmount
@@ -417,7 +418,7 @@ export default function VitalsKiosk() {
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-3">
-                  <button onClick={startCamera}
+                  <button onClick={() => cameraInputRef.current?.click()}
                     className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-medium shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition">
                     <Camera className="w-5 h-5" /> Open Camera
                   </button>
@@ -426,6 +427,9 @@ export default function VitalsKiosk() {
                     <Upload className="w-5 h-5" /> Upload Photo
                   </button>
                 </div>
+                {/* Native camera (capture forces camera app on Android) */}
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
+                {/* Gallery / file picker only — no capture attr */}
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
               </div>
             )}
