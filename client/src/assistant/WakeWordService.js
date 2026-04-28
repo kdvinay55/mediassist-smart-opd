@@ -50,6 +50,13 @@ export default class WakeWordService {
       return false;
     }
 
+    if (!VOSK_MODEL_URL) {
+      // Wake word engine isn't configured for this build — skip silently so the
+      // user can still tap the mic to talk. No error, no state machine fail.
+      this.logger?.('wake_word_disabled', { engine: this.engine, reason: 'no_model_url' });
+      return false;
+    }
+
     this.starting = true;
     this.wakeTriggered = false;
 

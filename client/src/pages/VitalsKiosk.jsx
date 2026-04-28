@@ -429,8 +429,8 @@ export default function VitalsKiosk() {
                 </div>
                 {/* Native camera (capture forces camera app on Android) */}
                 <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
-                {/* Gallery / file picker only — no capture attr */}
-                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                {/* Files / gallery picker — explicit extensions force Android file manager, not camera */}
+                <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.bmp,.gif" onChange={handleFileUpload} className="hidden" />
               </div>
             )}
           </div>
